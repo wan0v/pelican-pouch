@@ -39,8 +39,19 @@ The version lives in exactly one place: the git tag. Pushing `v1.2.3` triggers
 `.github/workflows/release.yml`, which
 
 1. builds and pushes `ghcr.io/wan0v/pouch-agent:1.2.3` and `:latest` from `agent/`,
+   for `linux/amd64` and `linux/arm64`,
 2. runs `scripts/build-zip.php 1.2.3` and attaches `pouch-1.2.3.zip` to the release,
 3. rewrites `update.json` on `main`, which `plugin.json.update_url` points at.
+
+A tag whose version contains a hyphen (`v1.2.3-rc1`) is treated as a prerelease: the image
+is pushed under its own tag but **`:latest` does not move**, the GitHub release is flagged
+`prerelease`, and the `manifest` job is skipped entirely. Both matter because
+`config('pouch.agent.image')` defaults to `:latest` and every installation polls
+`update.json` — without those guards an RC would ship itself to everyone.
+
+The GHCR package must be **public**; it is created private on the first push and pulling
+the agent on a node would otherwise fail with `denied`. Check it once at
+`https://github.com/users/wan0v/packages/container/pouch-agent/settings`.
 
 `scripts/build-zip.php` strips `meta` from `plugin.json` (local installation state) and
 excludes `agent/`, `AGENTS.md`, `plugin-development.md`, `scripts/`, `.github/`,
