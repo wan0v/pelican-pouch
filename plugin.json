@@ -1,0 +1,19 @@
+{
+    "id": "pouch",
+    "name": "Pouch",
+    "author": "wan0v",
+    "version": "1.0.0",
+    "description": "Publish HTTP(S) capable server allocations as HTTPS web services through a Caddy reverse proxy.",
+    "category": "plugin",
+    "url": "https://github.com/wan0v/pelican-pouch",
+    "update_url": "https://raw.githubusercontent.com/wan0v/pelican-pouch/main/update.json",
+    "namespace": "Wan0v\\Pouch",
+    "class": "PouchPlugin",
+    "panels": null,
+    "panel_version": null,
+    "composer_packages": null,
+    "meta": {
+        "status": "enabled",
+        "status_message": null
+    }
+}

@@ -1,0 +1,112 @@
+<?php
+
+return [
+    'title' => 'Pouch',
+    'routes' => 'Pouch Routes',
+    'route' => 'Pouch Route',
+
+    'modes' => [
+        'standalone' => [
+            'label' => 'Standalone',
+            'description' => 'The agent binds ports 80 and 443 of the node and terminates TLS itself.',
+        ],
+        'frontend' => [
+            'label' => 'Frontend',
+            'description' => 'The agent binds ports 80 and 443 and additionally proxies the Wings vhost, replacing the previous front-end proxy.',
+        ],
+        'behind' => [
+            'label' => 'Behind existing proxy',
+            'description' => 'The agent listens on localhost only and serves plain HTTP. TLS is terminated by the existing front-end proxy.',
+        ],
+    ],
+
+    'fields' => [
+        'allocation' => 'Allocation',
+        'label' => 'Hostname label',
+        'hostname' => 'Hostname',
+        'url' => 'Public URL',
+        'backend' => 'Backend',
+        'backend_scheme' => 'Backend scheme',
+        'backend_tls_insecure' => 'Skip backend certificate verification',
+        'enabled' => 'Enabled',
+        'certificate' => 'Certificate',
+        'web' => 'Web',
+    ],
+
+    'hints' => [
+        'label' => 'Only the label can be chosen. The base domain comes from the node\'s Wings FQDN.',
+        'base_domain' => 'Derived from the Wings FQDN of this node. Only nodes whose FQDN is an IP address use an explicitly configured proxy domain instead.',
+        'proxy_domain' => 'The FQDN of this node is an IP address, so no hostnames can be derived from it. Configure a domain whose wildcard record points at this node to use it as the base domain instead.',
+        'proxy_domain_input' => 'A domain of at least two labels in lower case, e.g. proxy.example.com. A wildcard record *.<domain> has to resolve to this node.',
+        'backend_scheme' => 'Caddy terminates TLS. The backend receives plain HTTP unless you switch this to HTTPS.',
+        'backend_tls_insecure' => 'Accept self-signed or otherwise invalid backend certificates.',
+        'websockets' => 'WebSocket connections are upgraded automatically.',
+    ],
+
+    'actions' => [
+        'create' => 'Publish via HTTPS',
+        'edit' => 'Edit route',
+        'delete' => 'Remove route',
+        'regenerate_label' => 'Generate new label',
+        'set_proxy_domain' => 'Set proxy domain',
+        'change_proxy_domain' => 'Change proxy domain',
+        'clear_proxy_domain' => 'Remove proxy domain',
+    ],
+
+    'node' => [
+        'tab' => 'Pouch',
+        'base_domain' => 'Proxy base domain',
+        'agent_status' => 'Agent status',
+        'agent_offline' => 'Agent has not checked in',
+        'agent_online' => 'Agent online',
+        'agent_never' => 'The agent has never contacted the panel.',
+        'last_seen' => 'Last sync',
+        'mode' => 'Mode',
+        'agent_version' => 'Agent version',
+        'caddy_version' => 'Caddy version',
+        'sync_state' => 'Configuration',
+        'in_sync' => 'In sync',
+        'pending' => 'Pending rollout',
+        'last_error' => 'Last error',
+        'routes_count' => 'Active routes',
+        'dns' => 'DNS requirement',
+        'dns_hint' => 'A wildcard record :wildcard must resolve to this node.',
+        'dns_ok' => 'Wildcard DNS resolves to :ip',
+        'dns_missing' => 'Wildcard DNS does not resolve yet.',
+        'dns_mismatch' => 'Wildcard DNS resolves to :resolved but the node is :expected.',
+        'install' => 'Agent installation',
+        'install_hint' => 'Run this compose file on the node. It reads the Wings credentials from /etc/pelican/config.yml, so no additional secrets are required.',
+        'install_docs' => 'Agent documentation',
+        'frontend_snippet' => 'Front-end proxy configuration',
+        'frontend_snippet_hint' => 'Add this to the existing front-end proxy so it forwards the wildcard to the agent.',
+        'proxy_domain' => 'Proxy domain',
+        'ip_fqdn_warning' => 'This node uses an IP address as its FQDN. Hostnames cannot be derived from an IP address, so Pouch stays unavailable until a proxy domain is configured here.',
+        'ip_fqdn_override_active' => 'The FQDN of this node is an IP address, so the proxy domain configured below is used as the base domain.',
+        'proxy_domain_saved' => 'Proxy domain saved',
+        'proxy_domain_cleared' => 'Proxy domain removed',
+        'proxy_domain_clear_hint' => 'Pouch becomes unavailable for this node again until a new domain is configured.',
+        'proxy_domain_in_use' => 'The proxy domain cannot be removed while :count route(s) are published on this node.',
+        'proxy_domain_change_warning' => ':count route(s) are published on this node. Changing the domain moves every hostname, and the agent will request new certificates on its next sync.',
+        'behind_proxy_warning' => 'This node is configured as "behind proxy" but the agent runs in standalone mode. Ports 80/443 are most likely already taken. Use the "frontend" or "behind" mode instead.',
+    ],
+
+    'errors' => [
+        'node_needs_proxy_domain' => 'The node :node uses an IP address as its FQDN and has no proxy domain configured. Set one in the node\'s Pouch tab.',
+        'proxy_domain_invalid' => 'Enter a valid domain name in lower case, e.g. proxy.example.com.',
+        'proxy_domain_taken' => 'This domain is already used by another node.',
+        'allocation_not_on_server' => 'The selected allocation does not belong to this server.',
+        'label_reserved' => 'This label is reserved and cannot be used.',
+        'label_taken' => 'This label is already in use on this node.',
+    ],
+
+    'settings' => [
+        'acme_email' => 'ACME account email',
+        'acme_email_hint' => 'Used by Caddy when requesting certificates. Recommended for expiry notifications.',
+        'acme_ca' => 'ACME directory URL',
+        'acme_ca_hint' => 'Leave empty to use the default issuers (Let\'s Encrypt with ZeroSSL fallback).',
+        'agent_interval' => 'Agent poll interval (seconds)',
+        'agent_offline_after' => 'Mark agent offline after (seconds)',
+        'agent_image' => 'Agent container image',
+        'saved' => 'Pouch settings saved',
+    ],
+];

@@ -1,0 +1,112 @@
+<?php
+
+return [
+    'title' => 'Pouch',
+    'routes' => 'Pouch-Routen',
+    'route' => 'Pouch-Route',
+
+    'modes' => [
+        'standalone' => [
+            'label' => 'Standalone',
+            'description' => 'Der Agent belegt Port 80 und 443 der Node und terminiert TLS selbst.',
+        ],
+        'frontend' => [
+            'label' => 'Frontend',
+            'description' => 'Der Agent belegt Port 80 und 443 und bedient zusätzlich den Wings-vhost, ersetzt also den bisherigen Frontend-Proxy.',
+        ],
+        'behind' => [
+            'label' => 'Hinter bestehendem Proxy',
+            'description' => 'Der Agent lauscht nur auf localhost und liefert reines HTTP aus. TLS terminiert der vorhandene Frontend-Proxy.',
+        ],
+    ],
+
+    'fields' => [
+        'allocation' => 'Allocation',
+        'label' => 'Hostname-Label',
+        'hostname' => 'Hostname',
+        'url' => 'Öffentliche URL',
+        'backend' => 'Backend',
+        'backend_scheme' => 'Backend-Schema',
+        'backend_tls_insecure' => 'Backend-Zertifikat nicht prüfen',
+        'enabled' => 'Aktiv',
+        'certificate' => 'Zertifikat',
+        'web' => 'Web',
+    ],
+
+    'hints' => [
+        'label' => 'Nur das Label ist wählbar. Die Basisdomain stammt aus dem Wings-FQDN der Node.',
+        'base_domain' => 'Wird aus dem Wings-FQDN dieser Node abgeleitet. Nur Nodes, deren FQDN eine IP-Adresse ist, verwenden stattdessen eine explizit konfigurierte Proxy-Domain.',
+        'proxy_domain' => 'Der FQDN dieser Node ist eine IP-Adresse, daraus lassen sich keine Hostnamen ableiten. Hier eine Domain hinterlegen, deren Wildcard-Record auf diese Node zeigt, um sie als Basisdomain zu verwenden.',
+        'proxy_domain_input' => 'Eine Domain aus mindestens zwei Labels in Kleinschreibung, z. B. proxy.example.com. Ein Wildcard-Record *.<Domain> muss auf diese Node auflösen.',
+        'backend_scheme' => 'Caddy terminiert TLS. Das Backend erhält unverschlüsseltes HTTP, sofern hier nicht auf HTTPS umgestellt wird.',
+        'backend_tls_insecure' => 'Selbstsignierte oder anderweitig ungültige Backend-Zertifikate akzeptieren.',
+        'websockets' => 'WebSocket-Verbindungen werden automatisch durchgereicht.',
+    ],
+
+    'actions' => [
+        'create' => 'Per HTTPS veröffentlichen',
+        'edit' => 'Route bearbeiten',
+        'delete' => 'Route entfernen',
+        'regenerate_label' => 'Neues Label generieren',
+        'set_proxy_domain' => 'Proxy-Domain festlegen',
+        'change_proxy_domain' => 'Proxy-Domain ändern',
+        'clear_proxy_domain' => 'Proxy-Domain entfernen',
+    ],
+
+    'node' => [
+        'tab' => 'Pouch',
+        'base_domain' => 'Proxy-Basisdomain',
+        'agent_status' => 'Agent-Status',
+        'agent_offline' => 'Agent hat sich nicht gemeldet',
+        'agent_online' => 'Agent online',
+        'agent_never' => 'Der Agent hat das Panel noch nie kontaktiert.',
+        'last_seen' => 'Letzter Sync',
+        'mode' => 'Modus',
+        'agent_version' => 'Agent-Version',
+        'caddy_version' => 'Caddy-Version',
+        'sync_state' => 'Konfiguration',
+        'in_sync' => 'Aktuell',
+        'pending' => 'Rollout ausstehend',
+        'last_error' => 'Letzter Fehler',
+        'routes_count' => 'Aktive Routen',
+        'dns' => 'DNS-Voraussetzung',
+        'dns_hint' => 'Ein Wildcard-Record :wildcard muss auf diese Node zeigen.',
+        'dns_ok' => 'Wildcard-DNS zeigt auf :ip',
+        'dns_missing' => 'Wildcard-DNS löst noch nicht auf.',
+        'dns_mismatch' => 'Wildcard-DNS zeigt auf :resolved, die Node ist aber :expected.',
+        'install' => 'Agent-Installation',
+        'install_hint' => 'Diese Compose-Datei auf der Node ausführen. Sie liest die Wings-Zugangsdaten aus /etc/pelican/config.yml, es werden also keine zusätzlichen Secrets benötigt.',
+        'install_docs' => 'Dokumentation des Agenten',
+        'frontend_snippet' => 'Konfiguration des Frontend-Proxys',
+        'frontend_snippet_hint' => 'Dieses Snippet im vorhandenen Frontend-Proxy ergänzen, damit die Wildcard an den Agenten weitergereicht wird.',
+        'proxy_domain' => 'Proxy-Domain',
+        'ip_fqdn_warning' => 'Diese Node verwendet eine IP-Adresse als FQDN. Aus einer IP-Adresse lassen sich keine Hostnamen ableiten, Pouch steht daher erst zur Verfügung, wenn hier eine Proxy-Domain hinterlegt ist.',
+        'ip_fqdn_override_active' => 'Der FQDN dieser Node ist eine IP-Adresse, daher wird die unten konfigurierte Proxy-Domain als Basisdomain verwendet.',
+        'proxy_domain_saved' => 'Proxy-Domain gespeichert',
+        'proxy_domain_cleared' => 'Proxy-Domain entfernt',
+        'proxy_domain_clear_hint' => 'Pouch steht für diese Node erst wieder zur Verfügung, wenn eine neue Domain hinterlegt wird.',
+        'proxy_domain_in_use' => 'Die Proxy-Domain kann nicht entfernt werden, solange :count Route(n) auf dieser Node veröffentlicht sind.',
+        'proxy_domain_change_warning' => 'Auf dieser Node sind :count Route(n) veröffentlicht. Beim Ändern der Domain wandern alle Hostnamen mit, und der Agent fordert beim nächsten Sync neue Zertifikate an.',
+        'behind_proxy_warning' => 'Diese Node ist als "behind proxy" konfiguriert, der Agent läuft aber im Standalone-Modus. Port 80/443 sind höchstwahrscheinlich bereits belegt. Bitte den Modus "frontend" oder "behind" verwenden.',
+    ],
+
+    'errors' => [
+        'node_needs_proxy_domain' => 'Die Node :node verwendet eine IP-Adresse als FQDN und hat keine Proxy-Domain konfiguriert. Diese im Pouch-Tab der Node hinterlegen.',
+        'proxy_domain_invalid' => 'Bitte einen gültigen Domainnamen in Kleinschreibung angeben, z. B. proxy.example.com.',
+        'proxy_domain_taken' => 'Diese Domain wird bereits von einer anderen Node verwendet.',
+        'allocation_not_on_server' => 'Die gewählte Allocation gehört nicht zu diesem Server.',
+        'label_reserved' => 'Dieses Label ist reserviert und kann nicht verwendet werden.',
+        'label_taken' => 'Dieses Label wird auf dieser Node bereits verwendet.',
+    ],
+
+    'settings' => [
+        'acme_email' => 'ACME-Konto-E-Mail',
+        'acme_email_hint' => 'Wird von Caddy beim Anfordern von Zertifikaten verwendet. Empfohlen für Ablaufbenachrichtigungen.',
+        'acme_ca' => 'ACME-Directory-URL',
+        'acme_ca_hint' => 'Leer lassen, um die Standard-Aussteller zu verwenden (Let\'s Encrypt mit ZeroSSL als Fallback).',
+        'agent_interval' => 'Abfrageintervall des Agenten (Sekunden)',
+        'agent_offline_after' => 'Agent als offline markieren nach (Sekunden)',
+        'agent_image' => 'Container-Image des Agenten',
+        'saved' => 'Pouch-Einstellungen gespeichert',
+    ],
+];

@@ -1,0 +1,28 @@
+# The panel's own phpstan.neon has `paths: [app]`, so plugin code is never
+# analysed by the panel's CI. This config analyses the plugin instead.
+#
+# Paths are relative to this file, which assumes the documented dev layout:
+# the plugin lives at <panel>/plugins/pouch. That is not a convention but a
+# requirement - the loader derives every path from plugin.json.id.
+#
+# Run from the panel root:
+#   vendor/bin/phpstan analyse -c plugins/pouch/phpstan.neon --memory-limit=-1
+
+includes:
+    - ../../vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+rules:
+    - App\PHPStan\ForbiddenGlobalFunctionsRule
+
+parameters:
+
+    paths:
+        - src
+
+    level: 6
+
+    treatPhpDocTypesAsCertain: false
+
+    ignoreErrors:
+        - identifier: missingType.generics

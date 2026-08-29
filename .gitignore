@@ -1,0 +1,8 @@
+# Release artifacts produced by scripts/build-zip.sh
+/dist/
+
+# Should never exist here: the plugin runs inside the panel's autoloader.
+/vendor/
+
+.DS_Store
+*.log

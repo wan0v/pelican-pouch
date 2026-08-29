@@ -1,0 +1,124 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    php:
+        name: Lint & static analysis (PHP ${{ matrix.php }})
+        runs-on: ubuntu-latest
+
+        # The panel supports ^8.3 || ^8.4 || ^8.5 and PHPStan derives its target
+        # version from the running runtime, so a single leg would hide
+        # version-specific findings in either direction.
+        strategy:
+            fail-fast: false
+            matrix:
+                php: ['8.3', '8.4', '8.5']
+
+        steps:
+            # The plugin cannot be analysed standalone: it has no composer.json
+            # and resolves App\* classes plus larastan from the panel it is
+            # installed into. So check the panel out and place the plugin where
+            # the loader expects it.
+            - name: Checkout panel
+              uses: actions/checkout@v7
+              with:
+                  repository: pelican/panel
+                  path: panel
+
+            - name: Checkout plugin
+              uses: actions/checkout@v7
+              with:
+                  path: panel/plugins/pouch
+
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: ${{ matrix.php }}
+                  extensions: bcmath, gd, intl, mbstring, zip
+                  coverage: none
+
+            # The panel pins config.platform.php to 8.3, so vendor resolves
+            # identically on every leg. The prefix only keeps the three parallel
+            # jobs from racing to write the same cache key.
+            - name: Cache composer dependencies
+              uses: actions/cache@v4
+              with:
+                  path: panel/vendor
+                  key: composer-${{ matrix.php }}-${{ hashFiles('panel/composer.lock') }}
+                  restore-keys: composer-${{ matrix.php }}-
+
+            - name: Install panel dependencies
+              working-directory: panel
+              run: composer install --no-interaction --prefer-dist --no-progress
+
+            # Pint is deterministic, so running it on every leg would just
+            # triple the same error message.
+            - name: Pint
+              if: matrix.php == '8.4'
+              working-directory: panel
+              run: vendor/bin/pint plugins/pouch --test
+
+            - name: PHPStan
+              working-directory: panel
+              run: vendor/bin/phpstan analyse -c plugins/pouch/phpstan.neon --memory-limit=-1 --no-progress
+
+    agent:
+        name: Agent
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            # The agent is POSIX sh, not bash. Check it as sh so we do not
+            # accidentally start relying on bashisms the container cannot run.
+            - name: ShellCheck
+              run: shellcheck -s sh agent/entrypoint.sh
+
+            - name: Build image
+              uses: docker/build-push-action@v6
+              with:
+                  context: agent
+                  push: false
+
+    zip:
+        name: Plugin zip
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.4'
+                  extensions: zip
+                  coverage: none
+
+            - name: Build
+              run: php scripts/build-zip.php
+
+            # Guard the two invariants the panel enforces on install:
+            # meta must be gone, and the folder name must equal plugin.json.id.
+            - name: Verify contents
+              run: |
+                  set -euo pipefail
+                  zip=$(ls dist/pouch-*.zip)
+                  echo "checking $zip"
+                  for unwanted in agent AGENTS.md plugin-development.md scripts .github update.json phpstan.neon; do
+                      if unzip -l "$zip" | grep -q "pouch/$unwanted"; then
+                          echo "::error::$unwanted must not be in the release zip"
+                          exit 1
+                      fi
+                  done
+                  unzip -p "$zip" pouch/plugin.json | php -r '
+                      $m = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+                      if (array_key_exists("meta", $m)) { fwrite(STDERR, "meta present\n"); exit(1); }
+                      if (($m["id"] ?? null) !== "pouch") { fwrite(STDERR, "bad id\n"); exit(1); }
+                      echo "plugin.json ok\n";
+                  '
