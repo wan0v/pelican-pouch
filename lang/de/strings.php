@@ -16,7 +16,7 @@ return [
         ],
         'behind' => [
             'label' => 'Hinter bestehendem Proxy',
-            'description' => 'Der Agent lauscht nur auf localhost und liefert reines HTTP aus. TLS terminiert der vorhandene Frontend-Proxy.',
+            'description' => 'Der Agent lauscht auf einer einzelnen lokalen Adresse (standardmäßig localhost) und liefert reines HTTP aus. TLS terminiert der vorhandene Frontend-Proxy.',
         ],
     ],
 
@@ -41,6 +41,7 @@ return [
         'backend_scheme' => 'Caddy terminiert TLS. Das Backend erhält unverschlüsseltes HTTP, sofern hier nicht auf HTTPS umgestellt wird.',
         'backend_tls_insecure' => 'Selbstsignierte oder anderweitig ungültige Backend-Zertifikate akzeptieren.',
         'websockets' => 'WebSocket-Verbindungen werden automatisch durchgereicht.',
+        'listen' => 'Wird vom Agenten über POUCH_BIND und POUCH_HTTP_PORT gemeldet. Der Frontend-Proxy muss genau an diese Adresse weiterleiten.',
     ],
 
     'actions' => [
@@ -62,6 +63,7 @@ return [
         'agent_never' => 'Der Agent hat das Panel noch nie kontaktiert.',
         'last_seen' => 'Letzter Sync',
         'mode' => 'Modus',
+        'listen' => 'Listen-Adresse',
         'agent_version' => 'Agent-Version',
         'caddy_version' => 'Caddy-Version',
         'sync_state' => 'Konfiguration',
@@ -87,6 +89,7 @@ return [
         'proxy_domain_clear_hint' => 'Pouch steht für diese Node erst wieder zur Verfügung, wenn eine neue Domain hinterlegt wird.',
         'proxy_domain_in_use' => 'Die Proxy-Domain kann nicht entfernt werden, solange :count Route(n) auf dieser Node veröffentlicht sind.',
         'proxy_domain_change_warning' => 'Auf dieser Node sind :count Route(n) veröffentlicht. Beim Ändern der Domain wandern alle Hostnamen mit, und der Agent fordert beim nächsten Sync neue Zertifikate an.',
+        'bind_untrusted_warning' => 'Der Agent bindet :bind, liefert damit unverschlüsseltes HTTP in dieses Netz aus, und der Frontend-Proxy verbindet sich von einer fremden Adresse. Aktuell wird nur Loopback vertraut, Backends sehen deshalb den Proxy statt des echten Clients. Auf der Node POUCH_TRUSTED_PROXIES auf das Netz des Frontend-Proxys setzen.',
         'behind_proxy_warning' => 'Diese Node ist als "behind proxy" konfiguriert, der Agent läuft aber im Standalone-Modus. Port 80/443 sind höchstwahrscheinlich bereits belegt. Bitte den Modus "frontend" oder "behind" verwenden.',
     ],
 

@@ -17,7 +17,9 @@ class PreviewCaddyConfigCommand extends Command
                             {node? : ID or name of the node}
                             {--mode= : Override the reported agent mode (standalone, frontend, behind)}
                             {--http-port= : Override the agent HTTP port}
-                            {--https-port= : Override the agent HTTPS port}';
+                            {--https-port= : Override the agent HTTPS port}
+                            {--bind= : Override the address the agent binds in behind mode}
+                            {--trusted-proxies= : Comma separated CIDR ranges trusted for X-Forwarded-* headers}';
 
     protected $description = 'Print the Caddy configuration the Pouch agent would receive for a node';
 
@@ -59,12 +61,24 @@ class PreviewCaddyConfigCommand extends Command
             $state->https_port = (int) $port;
         }
 
+        if ($bind = $this->option('bind')) {
+            $state->bind_address = (string) $bind;
+        }
+
+        if ($trusted = $this->option('trusted-proxies')) {
+            $state->trusted_proxies = array_values(array_filter(
+                array_map(trim(...), explode(',', (string) $trusted)),
+                fn (string $range) => $range !== '',
+            ));
+        }
+
         $result = $caddy->generate($node, $state);
 
         $this->line('# node:  ' . $node->name . ' (' . $node->fqdn . ')');
         $this->line('# base:  ' . $hostnames->wildcard($node)
             . ($hostnames->proxyDomain($node) !== null ? '  (configured proxy domain)' : ''));
         $this->line('# mode:  ' . $state->mode->value);
+        $this->line('# listen: ' . CaddyConfigService::listenAddress($state));
         $this->line('# hash:  ' . $result['hash']);
         $this->newLine();
         $this->line($caddy->encode($result['config'], pretty: true));

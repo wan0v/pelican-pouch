@@ -84,7 +84,14 @@ and warns when the mode contradicts the node's `behind proxy` setting.
 | ------------ | -------------------------------------------- | -------------------- | -------------- |
 | `standalone` | node is not behind a proxy, 80/443 are free   | `:80` + `:443`       | Caddy (ACME)   |
 | `frontend`   | node is behind a proxy, agent replaces it     | `:80` + `:443`       | Caddy (ACME)   |
-| `behind`     | an existing front-end proxy keeps 80/443      | `127.0.0.1:<port>`   | upstream proxy |
+| `behind`     | an existing front-end proxy keeps 80/443      | `<bind>:<port>`      | upstream proxy |
+
+In `behind` mode the agent binds `127.0.0.1` unless the node sets `POUCH_BIND`
+to another local address — useful when the front-end proxy sits on a different
+host in a private network. Its source address then has to be listed in
+`POUCH_TRUSTED_PROXIES`, otherwise Caddy discards the forwarded client IP. Both
+are ignored in the TLS-terminating modes, which have to own 80/443 on every
+address of the node.
 
 In `frontend` mode the panel additionally emits a passthrough route for the
 node's own Wings vhost (`node1.test.de` → `http://127.0.0.1:<daemon_listen>`), so

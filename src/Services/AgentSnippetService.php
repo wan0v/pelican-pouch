@@ -33,8 +33,21 @@ class AgentSnippetService
             'POUCH_MODE' => $mode->value,
             'POUCH_HTTP_PORT' => $mode === ProxyMode::Behind ? 8080 : 80,
             'POUCH_HTTPS_PORT' => 443,
-            'POUCH_INTERVAL' => (int) config('pouch.agent.interval', 15),
         ];
+
+        // Both only take effect in `behind` mode, so they are only carried over
+        // once the agent actually reported them.
+        if ($mode === ProxyMode::Behind && $state !== null) {
+            if (filled($state->bind_address)) {
+                $environment['POUCH_BIND'] = $state->bind_address;
+            }
+
+            if (filled($state->trusted_proxies)) {
+                $environment['POUCH_TRUSTED_PROXIES'] = implode(',', $state->trusted_proxies);
+            }
+        }
+
+        $environment['POUCH_INTERVAL'] = (int) config('pouch.agent.interval', 15);
 
         if ($mode->needsWingsPassthrough()) {
             $environment['POUCH_WINGS_UPSTREAM'] = '127.0.0.1:' . $node->daemon_listen;
@@ -72,7 +85,13 @@ class AgentSnippetService
     public function frontendSnippet(Node $node, ?PouchNodeState $state = null): string
     {
         $wildcard = $this->hostnames->wildcard($node);
-        $port = $state !== null ? $state->http_port : 8080;
+
+        // The upstream is whatever the agent binds, which is loopback unless
+        // the node reported a POUCH_BIND address.
+        $upstream = CaddyConfigService::listenAddress($state ?? new PouchNodeState([
+            'mode' => ProxyMode::Behind,
+            'http_port' => 8080,
+        ]));
 
         return <<<CADDY
         # Caddyfile — requires a wildcard certificate, e.g. via a DNS challenge.
@@ -80,7 +99,7 @@ class AgentSnippetService
             tls {
                 # dns <your-provider> <credentials>
             }
-            pouch 127.0.0.1:$port
+            reverse_proxy $upstream
         }
 
         # nginx equivalent
@@ -91,7 +110,7 @@ class AgentSnippetService
         #     ssl_certificate_key /path/to/privkey.pem;
         #
         #     location / {
-        #         proxy_pass http://127.0.0.1:$port;
+        #         proxy_pass http://$upstream;
         #         proxy_http_version 1.1;
         #         proxy_set_header Host              \$host;
         #         proxy_set_header X-Real-IP         \$remote_addr;

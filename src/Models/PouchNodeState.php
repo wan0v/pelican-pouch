@@ -17,6 +17,8 @@ use Wan0v\Pouch\Enums\ProxyMode;
  * @property ProxyMode $mode
  * @property int $http_port
  * @property int $https_port
+ * @property ?string $bind_address
+ * @property ?list<string> $trusted_proxies
  * @property ?string $wings_upstream
  * @property ?string $agent_version
  * @property ?string $caddy_version
@@ -36,6 +38,8 @@ class PouchNodeState extends Model
         'mode',
         'http_port',
         'https_port',
+        'bind_address',
+        'trusted_proxies',
         'wings_upstream',
         'agent_version',
         'caddy_version',
@@ -58,6 +62,7 @@ class PouchNodeState extends Model
             'mode' => ProxyMode::class,
             'http_port' => 'integer',
             'https_port' => 'integer',
+            'trusted_proxies' => 'array',
             'last_seen_at' => 'datetime',
             'cert_status' => 'array',
         ];

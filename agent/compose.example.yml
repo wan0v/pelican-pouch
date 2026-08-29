@@ -21,6 +21,12 @@ services:
             POUCH_HTTP_PORT: 80
             POUCH_HTTPS_PORT: 443
 
+            # Only used in "behind" mode: the local address to bind and the
+            # networks whose X-Forwarded-* headers may be trusted. Defaults to
+            # loopback, which is right when the front-end proxy runs here too.
+            # POUCH_BIND: 10.0.0.2
+            # POUCH_TRUSTED_PROXIES: 10.0.0.0/24
+
             # Poll interval in seconds.
             POUCH_INTERVAL: 15
 

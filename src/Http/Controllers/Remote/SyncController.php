@@ -34,6 +34,8 @@ class SyncController extends Controller
                 'mode' => $request->mode(),
                 'http_port' => $request->integer('http_port'),
                 'https_port' => $request->integer('https_port'),
+                'bind_address' => $request->input('bind_address'),
+                'trusted_proxies' => $request->input('trusted_proxies'),
                 'wings_upstream' => $request->input('wings_upstream'),
                 'agent_version' => $request->input('agent_version'),
                 'caddy_version' => $request->input('caddy_version'),

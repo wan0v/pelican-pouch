@@ -76,6 +76,15 @@ class PouchNodeTab
                             ->state(fn (Node $node) => self::state($node)?->mode)
                             ->helperText(fn (Node $node) => self::state($node)?->mode?->getDescription()),
 
+                        // Only meaningful while TLS is terminated upstream; the
+                        // other modes always bind every address of the node.
+                        TextEntry::make('pouch_listen')
+                            ->label(fn () => trans('pouch::strings.node.listen'))
+                            ->helperText(fn () => trans('pouch::strings.hints.listen'))
+                            ->copyable()
+                            ->visible(fn (Node $node) => self::listenAddress($node) !== null)
+                            ->state(fn (Node $node) => self::listenAddress($node)),
+
                         TextEntry::make('pouch_versions')
                             ->label(fn () => trans('pouch::strings.node.caddy_version'))
                             ->placeholder('—')
@@ -119,6 +128,16 @@ class PouchNodeTab
                             ->color('danger')
                             ->visible(fn (Node $node) => filled(self::state($node)?->last_error))
                             ->state(fn (Node $node) => self::state($node)?->last_error),
+
+                        TextEntry::make('pouch_bind_untrusted_warning')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->color('warning')
+                            ->icon(TablerIcon::AlertTriangle)
+                            ->visible(fn (Node $node) => self::bindUntrusted($node))
+                            ->state(fn (Node $node) => trans('pouch::strings.node.bind_untrusted_warning', [
+                                'bind' => self::state($node)?->bind_address,
+                            ])),
 
                         TextEntry::make('pouch_behind_proxy_warning')
                             ->hiddenLabel()
@@ -330,6 +349,41 @@ class PouchNodeTab
     private static function stateOrNew(Node $node): PouchNodeState
     {
         return self::state($node) ?? new PouchNodeState(['node_id' => $node->id]);
+    }
+
+    /**
+     * The address the agent binds. Null while the agent terminates TLS itself,
+     * where it always has to own every address of the node.
+     */
+    private static function listenAddress(Node $node): ?string
+    {
+        $state = self::state($node);
+
+        if ($state === null || $state->mode->terminatesTls()) {
+            return null;
+        }
+
+        return CaddyConfigService::listenAddress($state);
+    }
+
+    /**
+     * A bind address outside loopback means the front-end proxy dials the agent
+     * over a network, so its source address has to be trusted explicitly -
+     * otherwise every backend sees the proxy instead of the real client.
+     */
+    private static function bindUntrusted(Node $node): bool
+    {
+        $state = self::state($node);
+
+        if ($state === null || $state->mode->terminatesTls() || blank($state->bind_address)) {
+            return false;
+        }
+
+        if (str_starts_with($state->bind_address, '127.') || $state->bind_address === '::1') {
+            return false;
+        }
+
+        return CaddyConfigService::trustedRanges($state) === CaddyConfigService::DEFAULT_TRUSTED_PROXIES;
     }
 
     private static function inSync(Node $node): bool

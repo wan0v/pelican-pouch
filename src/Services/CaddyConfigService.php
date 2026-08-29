@@ -19,6 +19,22 @@ class CaddyConfigService
     /** Name of the HTTP server inside the generated config. */
     public const SERVER_NAME = 'pelican';
 
+    /**
+     * Address the agent binds in `behind` mode when it reports none. Keeping
+     * this the historical value means an agent that does not know about
+     * `POUCH_BIND` still receives a byte-identical configuration.
+     */
+    public const DEFAULT_BIND = '127.0.0.1';
+
+    /**
+     * Proxies whose `X-Forwarded-*` headers are always trusted. Loopback is
+     * inherently node-local, so it stays trusted even when a node reports its
+     * own ranges.
+     *
+     * @var list<string>
+     */
+    public const DEFAULT_TRUSTED_PROXIES = ['127.0.0.1/32', '::1/128'];
+
     public function __construct(private HostnameService $hostnames) {}
 
     /**
@@ -65,9 +81,7 @@ class CaddyConfigService
         ];
 
         $server = [
-            'listen' => $mode->terminatesTls()
-                ? [':' . $state->https_port]
-                : ['127.0.0.1:' . $state->http_port],
+            'listen' => [self::listenAddress($state)],
             'routes' => $httpRoutes,
         ];
 
@@ -77,7 +91,7 @@ class CaddyConfigService
             // Trust the X-Forwarded-* headers the front-end proxy sets.
             $server['trusted_proxies'] = [
                 'source' => 'static',
-                'ranges' => ['127.0.0.1/32', '::1/128'],
+                'ranges' => self::trustedRanges($state),
             ];
         }
 
@@ -98,6 +112,50 @@ class CaddyConfigService
         }
 
         return $config;
+    }
+
+    /**
+     * The single address the agent's HTTP server binds.
+     *
+     * Static so the Filament schemas can render it without the banned `app()`
+     * helper, the same reason `HostnameService::resolveBaseDomain()` is static.
+     *
+     * While the agent terminates TLS it has to own ports 80/443 on every
+     * address of the node, otherwise ACME breaks on the ones left out. Only in
+     * `behind` mode, where an upstream proxy dials the agent, is the bind
+     * address free to choose — a node reaching its front-end proxy over a
+     * private network binds that interface instead of loopback.
+     */
+    public static function listenAddress(PouchNodeState $state): string
+    {
+        if ($state->mode->terminatesTls()) {
+            return ':' . $state->https_port;
+        }
+
+        return self::dial($state->bind_address ?: self::DEFAULT_BIND, $state->http_port);
+    }
+
+    /**
+     * CIDR ranges Caddy accepts `X-Forwarded-*` headers from.
+     *
+     * Sorted and deduplicated: the agent reports whatever order its environment
+     * happens to have, and a reordered list would change the hash and make
+     * every poll reload Caddy.
+     *
+     * @return list<string>
+     */
+    public static function trustedRanges(PouchNodeState $state): array
+    {
+        $ranges = array_filter(
+            array_map(trim(...), $state->trusted_proxies ?? []),
+            fn (string $range) => $range !== '',
+        );
+
+        $ranges = array_unique([...self::DEFAULT_TRUSTED_PROXIES, ...$ranges]);
+
+        sort($ranges);
+
+        return $ranges;
     }
 
     /**
@@ -132,7 +190,7 @@ class CaddyConfigService
                 'handler' => 'reverse_proxy',
                 // Always the raw allocation ip/port, never the alias.
                 'upstreams' => [[
-                    'dial' => $this->dial($route->allocation->ip, $route->allocation->port),
+                    'dial' => self::dial($route->allocation->ip, $route->allocation->port),
                 ]],
                 'transport' => $route->backend_scheme->transport($route->backend_tls_insecure),
             ]],
@@ -199,7 +257,7 @@ class CaddyConfigService
         ];
     }
 
-    private function dial(string $ip, int $port): string
+    private static function dial(string $ip, int $port): string
     {
         return (is_ipv6($ip) ? "[$ip]" : $ip) . ':' . $port;
     }

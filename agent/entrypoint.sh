@@ -11,6 +11,8 @@ set -eu
 : "${POUCH_MODE:=standalone}"
 : "${POUCH_HTTP_PORT:=80}"
 : "${POUCH_HTTPS_PORT:=443}"
+: "${POUCH_BIND:=}"
+: "${POUCH_TRUSTED_PROXIES:=}"
 : "${POUCH_INTERVAL:=15}"
 : "${POUCH_WINGS_UPSTREAM:=}"
 : "${POUCH_WINGS_CONFIG:=/etc/pelican/config.yml}"
@@ -162,6 +164,8 @@ build_payload() {
         --arg mode "$POUCH_MODE" \
         --argjson http_port "$POUCH_HTTP_PORT" \
         --argjson https_port "$POUCH_HTTPS_PORT" \
+        --arg bind "$POUCH_BIND" \
+        --arg trusted_proxies "$POUCH_TRUSTED_PROXIES" \
         --arg wings_upstream "$POUCH_WINGS_UPSTREAM" \
         --arg agent_version "$POUCH_AGENT_VERSION" \
         --arg caddy_version "$(caddy_version)" \
@@ -172,6 +176,17 @@ build_payload() {
             mode: $mode,
             http_port: $http_port,
             https_port: $https_port,
+            bind_address: (if $bind == "" then null else $bind end),
+            trusted_proxies: (
+                if $trusted_proxies == "" then null
+                else (
+                    $trusted_proxies
+                    | split(",")
+                    | map(gsub("^\\s+|\\s+$"; ""))
+                    | map(select(. != ""))
+                )
+                end
+            ),
             wings_upstream: (if $wings_upstream == "" then null else $wings_upstream end),
             agent_version: $agent_version,
             caddy_version: (if $caddy_version == "" then null else $caddy_version end),
@@ -264,6 +279,16 @@ case "$POUCH_MODE" in
 standalone | frontend | behind) ;;
 *) fail "invalid POUCH_MODE '${POUCH_MODE}' (expected: standalone, frontend or behind)" ;;
 esac
+
+# While the agent terminates TLS it has to own 80/443 on every address of the
+# node, so the panel ignores a bind address outside of `behind` mode.
+if [ -n "$POUCH_BIND" ] && [ "$POUCH_MODE" != 'behind' ]; then
+    log "WARNING: POUCH_BIND is only used in behind mode and is ignored in ${POUCH_MODE} mode"
+fi
+
+if [ -n "$POUCH_TRUSTED_PROXIES" ] && [ "$POUCH_MODE" != 'behind' ]; then
+    log "WARNING: POUCH_TRUSTED_PROXIES is only used in behind mode and is ignored in ${POUCH_MODE} mode"
+fi
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 command -v curl >/dev/null 2>&1 || fail 'curl is required'

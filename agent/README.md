@@ -62,8 +62,8 @@ POUCH_WINGS_UPSTREAM: 127.0.0.1:8080
 
 An existing front-end proxy keeps ports 80/443.
 
-The agent listens on `127.0.0.1:<POUCH_HTTP_PORT>` and serves **plain HTTP** only;
-automatic HTTPS is disabled. Your existing proxy terminates TLS and needs a
+The agent listens on `<POUCH_BIND>:<POUCH_HTTP_PORT>` and serves **plain HTTP**
+only; automatic HTTPS is disabled. Your existing proxy terminates TLS and needs a
 wildcard vhost pointing at the agent. The panel shows you the exact snippet on
 the node's *Pouch* tab.
 
@@ -74,6 +74,32 @@ POUCH_HTTP_PORT: 8080
 
 With this mode you cannot use `network_mode: host` blindly if the port collides;
 adjust `POUCH_HTTP_PORT` accordingly.
+
+#### Binding another local address
+
+`POUCH_BIND` defaults to `127.0.0.1`, which is what you want when the front-end
+proxy runs on the same machine. If it runs on a different host in a private
+network, bind the interface it reaches instead and tell the agent which sources
+may set `X-Forwarded-*` headers:
+
+```yaml
+POUCH_MODE: behind
+POUCH_BIND: 10.0.0.2
+POUCH_HTTP_PORT: 8080
+POUCH_TRUSTED_PROXIES: 10.0.0.0/24
+```
+
+Both are only used in `behind` mode — while the agent terminates TLS it has to
+own ports 80/443 on *every* address of the node, otherwise ACME breaks on the
+ones left out. The agent logs a warning and the panel ignores them.
+
+Two things to be aware of:
+
+- The agent serves **unencrypted HTTP** on that address. Only bind an interface
+  whose network you trust, and firewall the port to the front-end proxy.
+- Loopback is always trusted. Every other proxy address has to be listed in
+  `POUCH_TRUSTED_PROXIES` (comma separated, plain IPs or CIDR), otherwise Caddy
+  ignores the forwarded headers and every backend sees the proxy as the client.
 
 ## DNS
 
@@ -102,6 +128,8 @@ performs a live check and tells you what it resolved.
 | `POUCH_MODE`           | `standalone`              | `standalone`, `frontend` or `behind`              |
 | `POUCH_HTTP_PORT`      | `80`                      | HTTP port / listen port in `behind` mode          |
 | `POUCH_HTTPS_PORT`     | `443`                     | HTTPS port, unused in `behind` mode               |
+| `POUCH_BIND`           | `127.0.0.1`               | Address to bind, `behind` mode only               |
+| `POUCH_TRUSTED_PROXIES`| _(loopback)_              | Extra CIDRs trusted for `X-Forwarded-*` headers   |
 | `POUCH_INTERVAL`       | `15`                      | Poll interval in seconds                          |
 | `POUCH_WINGS_UPSTREAM` | _(from panel)_            | Wings upstream for `frontend` mode                |
 | `POUCH_WINGS_CONFIG`   | `/etc/pelican/config.yml` | Where to read the credentials from                |

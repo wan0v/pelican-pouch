@@ -16,7 +16,7 @@ return [
         ],
         'behind' => [
             'label' => 'Behind existing proxy',
-            'description' => 'The agent listens on localhost only and serves plain HTTP. TLS is terminated by the existing front-end proxy.',
+            'description' => 'The agent listens on a single local address (localhost by default) and serves plain HTTP. TLS is terminated by the existing front-end proxy.',
         ],
     ],
 
@@ -41,6 +41,7 @@ return [
         'backend_scheme' => 'Caddy terminates TLS. The backend receives plain HTTP unless you switch this to HTTPS.',
         'backend_tls_insecure' => 'Accept self-signed or otherwise invalid backend certificates.',
         'websockets' => 'WebSocket connections are upgraded automatically.',
+        'listen' => 'Reported by the agent via POUCH_BIND and POUCH_HTTP_PORT. The front-end proxy has to forward to exactly this address.',
     ],
 
     'actions' => [
@@ -62,6 +63,7 @@ return [
         'agent_never' => 'The agent has never contacted the panel.',
         'last_seen' => 'Last sync',
         'mode' => 'Mode',
+        'listen' => 'Listen address',
         'agent_version' => 'Agent version',
         'caddy_version' => 'Caddy version',
         'sync_state' => 'Configuration',
@@ -87,6 +89,7 @@ return [
         'proxy_domain_clear_hint' => 'Pouch becomes unavailable for this node again until a new domain is configured.',
         'proxy_domain_in_use' => 'The proxy domain cannot be removed while :count route(s) are published on this node.',
         'proxy_domain_change_warning' => ':count route(s) are published on this node. Changing the domain moves every hostname, and the agent will request new certificates on its next sync.',
+        'bind_untrusted_warning' => 'The agent binds :bind, so it serves unencrypted HTTP on that network and the front-end proxy connects from a foreign address. Only loopback is trusted right now, so backends see the proxy instead of the real client. Set POUCH_TRUSTED_PROXIES on the node to the network of the front-end proxy.',
         'behind_proxy_warning' => 'This node is configured as "behind proxy" but the agent runs in standalone mode. Ports 80/443 are most likely already taken. Use the "frontend" or "behind" mode instead.',
     ],
 

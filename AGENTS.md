@@ -15,7 +15,7 @@ analysed inside a panel checkout at `plugins/pouch`.
 # from the panel root
 vendor/bin/pint plugins/pouch --test             # --test to check only; passes today
 vendor/bin/phpstan analyse -c plugins/pouch/phpstan.neon --memory-limit=-1
-php artisan p:pouch:preview <node id|name> [--mode=standalone|frontend|behind]
+php artisan p:pouch:preview <node id|name> [--mode=standalone|frontend|behind] [--bind=10.0.0.2]
 php artisan p:plugin:list                        # confirm the plugin is enabled/loaded
 php artisan migrate                              # picks up database/migrations automatically
 
@@ -130,6 +130,17 @@ by design — pick a node with a real domain when previewing.
 - `CaddyConfigService` is the only place that knows Caddy's config schema; the agent is
   intentionally dumb and applies whatever it gets. Route ordering is `orderBy('label')` to
   keep the hash stable — non-deterministic output makes every agent poll reload Caddy.
+  `trustedRanges()` sorts and deduplicates for the same reason.
+- The listener is computed **only** in `CaddyConfigService::listenAddress()`. In
+  TLS-terminating modes it stays `:<https_port>` (every address of the node — a single-IP
+  bind would break ACME on the others); in `behind` mode it is
+  `<bind_address ?: 127.0.0.1>:<http_port>`. UI and snippets must call that method instead
+  of re-deriving the address, and `bind_address` / `trusted_proxies` must stay ignored
+  outside `behind` mode.
+- The defaults (`DEFAULT_BIND`, `DEFAULT_TRUSTED_PROXIES`) must keep producing the exact
+  config a pre-`POUCH_BIND` agent used to receive. Verify with
+  `p:pouch:preview <node> --mode=behind` — the hash may not move for nodes that report
+  neither value, otherwise every existing installation reloads Caddy once for nothing.
 
 ## Agent contract
 
@@ -141,5 +152,13 @@ by design — pick a node with a real domain when previewing.
   returns `{hash, generated_at, base_domain, poll_interval, config}`.
 - `ProxyMode` (`standalone` / `frontend` / `behind`) is reported by the agent via `POUCH_MODE`
   and shapes the config through `terminatesTls()` and `needsWingsPassthrough()`.
+- Everything node-local (mode, ports, `POUCH_BIND`, `POUCH_TRUSTED_PROXIES`, wings upstream)
+  is reported *by the agent* into `pouch_node_states` — the panel has no UI for it, because
+  only the node knows its interfaces. New knobs of that kind follow the same path:
+  env var → `build_payload` → `SyncRequest` → `PouchNodeState` → `CaddyConfigService`.
+  Fields must stay `nullable`, since older agents do not send them.
+- `POUCH_TRUSTED_PROXIES` is a comma separated list of IPs/CIDRs; loopback is always
+  merged in. Without it a non-loopback `POUCH_BIND` makes every backend see the front-end
+  proxy as the client.
 - `agent/entrypoint.sh` is POSIX `sh` under `set -eu` on `caddy:2-alpine` with only
   `curl` + `jq` available — no bash-isms, no extra tooling.
