@@ -250,7 +250,11 @@ sync_once() {
 
 shutdown() {
     log 'shutting down'
-    [ -n "$CADDY_PID" ] && kill "$CADDY_PID" 2>/dev/null || true
+
+    if [ -n "$CADDY_PID" ]; then
+        kill "$CADDY_PID" 2>/dev/null || true
+    fi
+
     exit 0
 }
 
