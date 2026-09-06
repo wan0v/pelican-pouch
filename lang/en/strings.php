@@ -55,6 +55,7 @@ return [
         'clear_proxy_domain' => 'Remove proxy domain',
         'generate_agent_token' => 'Generate agent token',
         'regenerate_agent_token' => 'Generate new agent token',
+        'agent_token_done' => 'Done',
     ],
 
     'node' => [

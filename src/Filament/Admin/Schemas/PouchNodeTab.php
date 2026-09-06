@@ -5,6 +5,7 @@ namespace Wan0v\Pouch\Filament\Admin\Schemas;
 use App\Enums\TablerIcon;
 use App\Models\Node;
 use Filament\Actions\Action;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -13,6 +14,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Phiki\Grammar\Grammar;
@@ -311,20 +313,39 @@ class PouchNodeTab
                                 // The only moment the secret is shown. The panel
                                 // keeps it encrypted afterwards, because it has
                                 // to compare the plaintext the agent presents.
-                                ->action(function (Node $node) {
+                                ->action(function (Node $node, HasActions $livewire) {
                                     $token = PouchNodeSetting::generateAgentToken($node);
 
-                                    Notification::make()
-                                        ->success()
-                                        ->persistent()
-                                        ->title(trans('pouch::strings.node.agent_token_created'))
-                                        ->body(new HtmlString(sprintf(
-                                            '<p>%s</p><pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs">%s</pre>',
-                                            e(trans('pouch::strings.node.agent_token_once')),
-                                            e(app(AgentSnippetService::class)->env($node, $token)),
-                                        )))
-                                        ->send();
-                                }),
+                                    $livewire->mountAction('exclude_pouch_show_agent_token', [
+                                        'env' => app(AgentSnippetService::class)->env($node, $token),
+                                    ]);
+                                })
+                                ->registerModalActions([
+                                    // A second modal rather than a notification:
+                                    // the secret has to stay on screen long
+                                    // enough to be copied out of a code block.
+                                    Action::make('exclude_pouch_show_agent_token')
+                                        ->modalHeading(fn () => trans('pouch::strings.node.agent_token_created'))
+                                        ->modalDescription(fn () => trans('pouch::strings.node.agent_token_once'))
+                                        ->modalIcon(TablerIcon::Key)
+                                        ->modalIconColor('success')
+                                        ->modalWidth(Width::TwoExtraLarge)
+                                        ->schema(fn (array $arguments) => [
+                                            CodeEntry::make('pouch_generated_env')
+                                                ->label('pouch.env')
+                                                ->copyable()
+                                                ->columnSpanFull()
+                                                ->state($arguments['env']),
+                                        ])
+                                        // Closing by accident would lose the
+                                        // secret, so it takes the button.
+                                        ->closeModalByClickingAway(false)
+                                        ->closeModalByEscaping(false)
+                                        ->modalCloseButton(false)
+                                        ->modalSubmitActionLabel(fn () => trans('pouch::strings.actions.agent_token_done'))
+                                        ->modalCancelAction(false)
+                                        ->cancelParentActions(),
+                                ]),
                         ])->columnSpanFull(),
 
                         CodeEntry::make('pouch_env')

@@ -55,6 +55,7 @@ return [
         'clear_proxy_domain' => 'Proxy-Domain entfernen',
         'generate_agent_token' => 'Agent-Token erzeugen',
         'regenerate_agent_token' => 'Neuen Agent-Token erzeugen',
+        'agent_token_done' => 'Fertig',
     ],
 
     'node' => [
