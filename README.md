@@ -58,6 +58,14 @@ Later versions are offered by the panel itself — the plugin points at its own
 update feed, so you get an **Update** button on the plugin list when a new
 release is out.
 
+> **Upgrading from a version before the agent credential:** the agent used to
+> authenticate with the Wings token it read from `/etc/pelican/config.yml`. That
+> is no longer accepted. Right after the update **every node goes offline on the
+> Pouch tab** until you generate an agent token there and put the resulting
+> `pouch.env` next to the agent's compose file (step 3). Published routes keep
+> working in the meantime — the agent's Caddy holds the configuration it applied
+> last — but nothing new rolls out until the credential is in place.
+
 ---
 
 ## Step 2 — Pick a mode
@@ -98,26 +106,30 @@ covers that case.
 The panel writes the compose file for you.
 
 1. Open *Admin* → *Nodes* → your node → *Edit* → the **Pouch** tab (last tab).
-2. Expand **Agent installation**. It contains a complete `compose.yml`, already
+2. In **Agent credential**, press *Generate agent token*. The panel shows the
+   complete `pouch.env` once, and only once — copy it to the node next to the
+   compose file and `chmod 600 pouch.env`.
+3. Expand **Agent installation**. It contains a complete `compose.yml`, already
    filled in for *this* node — image, mode, ports and poll interval.
-3. Copy it to the node as `compose.yml`, adjust `POUCH_MODE` if the suggested
+4. Copy it to the node as `compose.yml`, adjust `POUCH_MODE` if the suggested
    one is not what you want, and run:
 
    ```bash
    docker compose up -d
    ```
 
-4. Go back to the **Pouch** tab. Within a few seconds *Agent status* flips to
+5. Go back to the **Pouch** tab. Within a few seconds *Agent status* flips to
    **Agent online**.
 
 Two things worth knowing about that generated file:
 
-- **It contains no secrets.** The agent mounts `/etc/pelican/config.yml`
-  read-only and authenticates with the Wings token that is already on the node.
-  Nothing to create, copy or rotate — and if you reset the node token, the agent
-  picks the new one up by itself.
-- **It does not set `POUCH_INSECURE`.** If your *panel* uses a self-signed
-  certificate, add `POUCH_INSECURE: "true"` to the environment block yourself.
+- **The secret lives beside it, not in it.** `compose.yml` only references
+  `./pouch.env`, so it can be copied around and committed without leaking the
+  credential.
+- **It never disables certificate verification.** If your *panel* uses a
+  self-signed or private certificate, mount the CA bundle and point
+  `POUCH_CA_CERT` at it. That channel carries the agent token and returns the
+  configuration the agent applies unverified, so it is not one to leave open.
 
 If you chose `behind` mode, the same tab grows a **Front-end proxy
 configuration** section once the agent has reported in. It contains a ready
@@ -239,9 +251,9 @@ URL, nothing more.
 
 **The agent never comes online.**
 Check the container on the node: `docker logs -f pelican-pouch`.
-`missing credentials` means `/etc/pelican/config.yml` is not mounted or not
-readable. `http 401` means the token no longer matches the panel — restart Wings
-so it rewrites the file.
+`missing credentials` means `pouch.env` is not next to the compose file or is
+missing a value. `http 403` means the token does not match the panel — generate
+a new one on the *Pouch* tab and replace `pouch.env`.
 
 **"Wildcard DNS does not resolve yet."**
 The `*.<base domain>` record is missing, or has not propagated. Note the panel
@@ -294,9 +306,12 @@ configuration through it. Instead Pouch runs a small agent on the node:
 - **One request does everything.** It is heartbeat and config poll in one, so
   the panel always knows the agent's mode, version, applied configuration and
   certificate state.
-- **No second secret.** The agent authenticates with the Wings token already
-  present on the node (`Bearer <token_id>.<token>` from
-  `/etc/pelican/config.yml`), on the panel's existing daemon endpoint.
+- **Its own credential.** The agent authenticates with a token issued per node
+  on the *Pouch* tab (`Bearer <token_id>.<token>`), which is valid for this sync
+  endpoint and nothing else. The Wings token stays on the node: it unlocks the
+  node's entire remote API — every server configuration including its egg
+  secrets, backup upload URLs, the SFTP credential check — and signs every node
+  JWT, which is far more than a reverse proxy needs.
 - **Reloads only on change.** The panel returns a hash alongside the
   configuration; the agent reloads Caddy only when it differs from what it
   applied last.

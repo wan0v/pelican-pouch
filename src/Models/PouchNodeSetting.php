@@ -19,6 +19,8 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property int $node_id
  * @property ?string $proxy_domain
+ * @property ?string $agent_token_id
+ * @property ?string $agent_token
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node $node
@@ -33,6 +35,21 @@ class PouchNodeSetting extends Model
     ];
 
     /**
+     * Never mass assignable and never serialized — the agent token is handed
+     * out exactly once, when it is generated.
+     */
+    protected $hidden = [
+        'agent_token_id',
+        'agent_token',
+    ];
+
+    /** Length of the public part of the agent credential. */
+    public const AGENT_TOKEN_ID_LENGTH = 16;
+
+    /** Length of the secret part of the agent credential. */
+    public const AGENT_TOKEN_LENGTH = 64;
+
+    /**
      * Per-request cache. The proxy domain is resolved once per route while the
      * Caddy configuration is generated and once per row in the admin tables,
      * so this would otherwise be a guaranteed N+1.
@@ -45,6 +62,9 @@ class PouchNodeSetting extends Model
     {
         return [
             'node_id' => 'integer',
+            // Reversible, like the core node token (Node::casts()): the panel
+            // has to compare the plaintext the agent presents.
+            'agent_token' => 'encrypted',
         ];
     }
 
@@ -63,6 +83,26 @@ class PouchNodeSetting extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * Issue a fresh agent credential for a node and return the full
+     * `<token_id>.<token>` string. This is the only moment the secret is
+     * readable; afterwards only its id is shown.
+     *
+     * Until a node has one, its agent cannot sync at all — there is no fallback
+     * to the Wings token. Regenerating locks out the agent that currently runs
+     * on the node until the new credential is deployed there.
+     */
+    public static function generateAgentToken(Node $node): string
+    {
+        $setting = static::query()->firstOrNew(['node_id' => $node->id]);
+
+        $setting->agent_token_id = Str::random(self::AGENT_TOKEN_ID_LENGTH);
+        $setting->agent_token = Str::random(self::AGENT_TOKEN_LENGTH);
+        $setting->save();
+
+        return $setting->agent_token_id . '.' . $setting->agent_token;
     }
 
     /**

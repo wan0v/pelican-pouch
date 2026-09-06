@@ -11,7 +11,7 @@ permissions:
 
 jobs:
     php:
-        name: Lint & static analysis (PHP ${{ matrix.php }})
+        name: Lint, static analysis & tests (PHP ${{ matrix.php }})
         runs-on: ubuntu-latest
 
         # The panel supports ^8.3 || ^8.4 || ^8.5 and PHPStan derives its target
@@ -42,7 +42,7 @@ jobs:
               uses: shivammathur/setup-php@v2
               with:
                   php-version: ${{ matrix.php }}
-                  extensions: bcmath, gd, intl, mbstring, zip
+                  extensions: bcmath, gd, intl, mbstring, pdo_sqlite, sqlite3, zip
                   coverage: none
 
             # The panel pins config.platform.php to 8.3, so vendor resolves
@@ -69,6 +69,37 @@ jobs:
             - name: PHPStan
               working-directory: panel
               run: vendor/bin/phpstan analyse -c plugins/pouch/phpstan.neon --memory-limit=-1 --no-progress
+
+            # The panel's migrations have to be in place first; the plugin's own
+            # are applied by PouchTestCase, because PluginService loads nothing
+            # while tests run.
+            #
+            # The env block is scoped to these two steps on purpose: composer,
+            # Pint and PHPStan keep running exactly as they did before.
+            - name: Prepare database
+              working-directory: panel
+              env:
+                  APP_ENV: testing
+                  APP_KEY: ThisIsARandomStringForTests12345
+                  APP_URL: http://localhost/
+                  DB_CONNECTION: sqlite
+                  DB_DATABASE: testing.sqlite
+              run: |
+                  touch database/testing.sqlite
+                  php artisan migrate --force --seed
+
+            # Unlike Pint this runs on every leg. Formatting is deterministic,
+            # runtime behaviour is not, and the matrix legs are separate runners
+            # so it costs no wall clock.
+            - name: Tests
+              working-directory: panel
+              env:
+                  APP_ENV: testing
+                  APP_KEY: ThisIsARandomStringForTests12345
+                  APP_URL: http://localhost/
+                  DB_CONNECTION: sqlite
+                  DB_DATABASE: testing.sqlite
+              run: vendor/bin/phpunit -c plugins/pouch/phpunit.xml
 
     agent:
         name: Agent
@@ -110,7 +141,7 @@ jobs:
                   set -euo pipefail
                   zip=$(ls dist/pouch-*.zip)
                   echo "checking $zip"
-                  for unwanted in agent AGENTS.md plugin-development.md scripts .github update.json phpstan.neon; do
+                  for unwanted in agent AGENTS.md plugin-development.md scripts .github update.json phpstan.neon tests phpunit.xml; do
                       if unzip -l "$zip" | grep -q "pouch/$unwanted"; then
                           echo "::error::$unwanted must not be in the release zip"
                           exit 1

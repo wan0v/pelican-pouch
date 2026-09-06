@@ -42,6 +42,7 @@ return [
         'backend_tls_insecure' => 'Accept self-signed or otherwise invalid backend certificates.',
         'websockets' => 'WebSocket connections are upgraded automatically.',
         'listen' => 'Reported by the agent via POUCH_BIND and POUCH_HTTP_PORT. The front-end proxy has to forward to exactly this address.',
+        'agent_token' => 'The public half of the credential. It identifies the agent; the secret half is shown only once, when the token is generated.',
     ],
 
     'actions' => [
@@ -52,6 +53,8 @@ return [
         'set_proxy_domain' => 'Set proxy domain',
         'change_proxy_domain' => 'Change proxy domain',
         'clear_proxy_domain' => 'Remove proxy domain',
+        'generate_agent_token' => 'Generate agent token',
+        'regenerate_agent_token' => 'Generate new agent token',
     ],
 
     'node' => [
@@ -76,8 +79,18 @@ return [
         'dns_ok' => 'Wildcard DNS resolves to :ip',
         'dns_missing' => 'Wildcard DNS does not resolve yet.',
         'dns_mismatch' => 'Wildcard DNS resolves to :resolved but the node is :expected.',
+        'credential' => 'Agent credential',
+        'credential_hint' => 'The agent authenticates with its own token, which only unlocks this sync endpoint. The Wings token stays on the node and is never handed to the agent container.',
+        'agent_token_id' => 'Agent token ID',
+        'agent_token_missing' => 'No agent token yet — generate one, the agent cannot sync without it.',
+        'agent_token_created' => 'Agent token generated',
+        'agent_token_once' => 'Copy this into pouch.env next to the compose file on the node and chmod 600 it. The panel stores the secret encrypted and does not show it again — generate a new one if it gets lost.',
+        'agent_token_generate_hint' => 'Issues a credential that is valid only for this node\'s sync endpoint. The agent needs it to sync at all, so deploy the resulting pouch.env to the node.',
+        'agent_token_regenerate_warning' => 'The agent currently running on this node stops syncing until the new credential is deployed there.',
+        'broad_proxies_warning' => 'The agent trusts :ranges for X-Forwarded-* headers. Every client inside those networks can claim any source address towards the backends of this node. Narrow POUCH_TRUSTED_PROXIES down to the front-end proxy.',
+        'agent_token_required_warning' => 'This node has no agent token, so its agent cannot sync. Generate one below, put the resulting pouch.env on the node and remove the /etc/pelican/config.yml mount from the agent container — the Wings token is no longer accepted.',
         'install' => 'Agent installation',
-        'install_hint' => 'Run this compose file on the node. It reads the Wings credentials from /etc/pelican/config.yml, so no additional secrets are required.',
+        'install_hint' => 'Run this compose file on the node, together with the pouch.env from the section above.',
         'install_docs' => 'Agent documentation',
         'frontend_snippet' => 'Front-end proxy configuration',
         'frontend_snippet_hint' => 'Add this to the existing front-end proxy so it forwards the wildcard to the agent.',

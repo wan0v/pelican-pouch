@@ -15,7 +15,7 @@ The whole system is one loop:
 
 ```text
 env vars on the node
-  → POST /api/remote/pouch/sync   (SyncController, Wings token auth)
+  → POST /api/remote/pouch/sync   (SyncController, agent token auth)
   → pouch_node_states             (what the node reports about itself)
   → CaddyConfigService            (the panel decides everything)
   → { hash, caddy json }
@@ -34,6 +34,8 @@ and never authored in the panel.
 | `src/Services/CaddyConfigService.php` | builds the entire Caddy JSON + its hash |
 | `src/Services/AgentSnippetService.php` | the `compose.yml` and front-end proxy snippets shown in the UI |
 | `src/Http/Controllers/Remote/SyncController.php`, `routes/api-remote.php` | the single agent endpoint |
+| `src/Http/Middleware/AuthenticatePouchAgent.php` | the agent credential check |
+| `tests/`, `phpunit.xml` | `vendor/bin/phpunit -c plugins/pouch/phpunit.xml` from the panel root |
 | `src/Filament/Admin/Schemas/PouchNodeTab.php` | the node's "Pouch" tab (agent status, proxy domain, snippets) |
 | `src/Filament/Admin/RelationManagers/PouchRoutesRelationManager.php` | "Pouch Routes" below a server's allocations |
 | `src/Observers/AllocationObserver.php`, `PouchRoute::pruneStaleForNode()` | cleanup of released allocations |
@@ -228,10 +230,19 @@ by design — pick a node with a real domain when previewing.
 
 ## Agent contract
 
-- Single endpoint `POST /api/remote/pouch/sync` (`PouchRouteProvider`),
-  mounted on the panel's existing `daemon` middleware, so the agent authenticates with the
-  Wings token already on the node (`Bearer <token_id>.<token>` from `/etc/pelican/config.yml`).
-  Never introduce a separate secret.
+- Single endpoint `POST /api/remote/pouch/sync` (`PouchRouteProvider`), behind the plugin's
+  own `AuthenticatePouchAgent` middleware and a `throttle:120,1`. The agent presents a
+  credential issued per node on the Pouch tab (`Bearer <token_id>.<token>`, stored in
+  `pouch_node_settings.agent_token_id` / `agent_token`).
+  **Never widen this back to the Wings token.** That token unlocks the node's entire remote
+  API — every server configuration including its egg secrets, backup upload URLs, the SFTP
+  credential check, the activity log — and is the HMAC key of every node JWT
+  (`NodeJWTService`). The agent container terminates TLS on 80/443 for untrusted backends, so
+  it gets the smallest credential that does the job, and one that can be revoked without
+  rotating the node.
+  There is **no fallback**: an agent presenting the Wings token gets a 403 like any other bad
+  credential. That is a breaking change — every node needs a token generated on its Pouch tab
+  and the resulting `pouch.env` deployed, or its agent stops syncing.
 - The request is heartbeat + config poll in one: it writes `PouchNodeState` and
   returns `{hash, generated_at, base_domain, poll_interval, config}`.
 - `ProxyMode` (`standalone` / `frontend` / `behind`) is reported by the agent via `POUCH_MODE`
@@ -246,10 +257,20 @@ by design — pick a node with a real domain when previewing.
   proxy as the client.
 - `agent/entrypoint.sh` is POSIX `sh` under `set -eu` on `caddy:2-alpine` with only
   `curl` + `jq` available — no bash-isms, no extra tooling.
+- The agent never reads `/etc/pelican/config.yml`, never disables TLS verification
+  (`POUCH_CA_CERT` covers private CAs, `POUCH_ALLOW_HTTP` is development only) and reaches
+  Caddy's admin API over the unix socket `/run/pouch/admin.sock` — under the documented
+  `network_mode: host` a loopback port would be the *host's* loopback.
+- Everything the agent reports is attacker-controlled input in the threat model, since it
+  shapes the configuration the node's public proxy then runs: `wings_upstream` is validated
+  as `host:port`, `trusted_proxies` rejects prefixes shorter than /8 (/32 for IPv6), and
+  `cert_status` is bounded in size with hostname-shaped keys. Keep new fields as tight.
 - `AgentSnippetService::compose()` only *echoes back* `POUCH_BIND` / `POUCH_TRUSTED_PROXIES`
   once the agent has reported them, and only in `behind` mode. The panel never authors
   node-local values — the generated snippet is a convenience, not a source of truth. It
-  also carries no secrets, since the agent reads them from the mounted Wings config.
+  also carries no secrets: the credential lives in `pouch.env` next to it (`env_file`), which
+  `AgentSnippetService::env()` renders — with the token filled in exactly once, right after
+  it was generated.
 
 ## UI strings
 

@@ -139,6 +139,26 @@ class PouchNodeTab
                                 'bind' => self::state($node)?->bind_address,
                             ])),
 
+                        TextEntry::make('pouch_broad_proxies_warning')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->color('warning')
+                            ->icon(TablerIcon::AlertTriangle)
+                            ->visible(fn (Node $node) => self::broadTrustedRanges($node) !== [])
+                            ->state(fn (Node $node) => trans('pouch::strings.node.broad_proxies_warning', [
+                                'ranges' => implode(', ', self::broadTrustedRanges($node)),
+                            ])),
+
+                        // Without a credential the agent cannot sync at all, so
+                        // this is an error and not a hint.
+                        TextEntry::make('pouch_missing_token_warning')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->color('danger')
+                            ->icon(TablerIcon::AlertTriangle)
+                            ->visible(fn (Node $node) => self::agentTokenId($node) === null)
+                            ->state(fn () => trans('pouch::strings.node.agent_token_required_warning')),
+
                         TextEntry::make('pouch_behind_proxy_warning')
                             ->hiddenLabel()
                             ->columnSpanFull()
@@ -260,6 +280,61 @@ class PouchNodeTab
                     ]),
 
                 Section::make()
+                    ->heading(fn () => trans('pouch::strings.node.credential'))
+                    ->icon(TablerIcon::Key)
+                    ->description(fn () => trans('pouch::strings.node.credential_hint'))
+                    ->columns(2)
+                    ->visible(fn (Node $node) => self::supported($node))
+                    ->schema([
+                        TextEntry::make('pouch_agent_token_id')
+                            ->label(fn () => trans('pouch::strings.node.agent_token_id'))
+                            ->helperText(fn () => trans('pouch::strings.hints.agent_token'))
+                            ->placeholder(fn () => trans('pouch::strings.node.agent_token_missing'))
+                            ->copyable()
+                            ->state(fn (Node $node) => self::agentTokenId($node)),
+
+                        Actions::make([
+                            Action::make('exclude_pouch_generate_agent_token')
+                                ->label(fn (Node $node) => self::agentTokenId($node) === null
+                                    ? trans('pouch::strings.actions.generate_agent_token')
+                                    : trans('pouch::strings.actions.regenerate_agent_token'))
+                                ->icon(TablerIcon::Key)
+                                ->color(fn (Node $node) => self::agentTokenId($node) === null ? 'primary' : 'danger')
+                                ->authorize(fn (Node $node) => (bool) user()?->can('update', $node))
+                                ->requiresConfirmation()
+                                ->modalHeading(fn (Node $node) => self::agentTokenId($node) === null
+                                    ? trans('pouch::strings.actions.generate_agent_token')
+                                    : trans('pouch::strings.actions.regenerate_agent_token'))
+                                ->modalDescription(fn (Node $node) => self::agentTokenId($node) === null
+                                    ? trans('pouch::strings.node.agent_token_generate_hint')
+                                    : trans('pouch::strings.node.agent_token_regenerate_warning'))
+                                // The only moment the secret is shown. The panel
+                                // keeps it encrypted afterwards, because it has
+                                // to compare the plaintext the agent presents.
+                                ->action(function (Node $node) {
+                                    $token = PouchNodeSetting::generateAgentToken($node);
+
+                                    Notification::make()
+                                        ->success()
+                                        ->persistent()
+                                        ->title(trans('pouch::strings.node.agent_token_created'))
+                                        ->body(new HtmlString(sprintf(
+                                            '<p>%s</p><pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs">%s</pre>',
+                                            e(trans('pouch::strings.node.agent_token_once')),
+                                            e(app(AgentSnippetService::class)->env($node, $token)),
+                                        )))
+                                        ->send();
+                                }),
+                        ])->columnSpanFull(),
+
+                        CodeEntry::make('pouch_env')
+                            ->label('pouch.env')
+                            ->copyable()
+                            ->columnSpanFull()
+                            ->state(fn (Node $node) => app(AgentSnippetService::class)->env($node)),
+                    ]),
+
+                Section::make()
                     ->heading(fn () => trans('pouch::strings.node.install'))
                     ->icon(TablerIcon::BrandDocker)
                     ->description(fn () => self::installDescription())
@@ -330,6 +405,20 @@ class PouchNodeTab
             : null;
     }
 
+    /**
+     * The public half of the node's agent credential, or null while the agent
+     * still authenticates with the Wings token (prev. 1.1.0).
+     *
+     * Deliberately uncached: the generate action changes it within the same
+     * request and the tab has to render the new value.
+     */
+    private static function agentTokenId(Node $node): ?string
+    {
+        $tokenId = PouchNodeSetting::query()->where('node_id', $node->id)->value('agent_token_id');
+
+        return filled($tokenId) ? (string) $tokenId : null;
+    }
+
     private static function routeCount(Node $node): int
     {
         return PouchRoute::query()->where('node_id', $node->id)->count();
@@ -384,6 +473,40 @@ class PouchNodeTab
         }
 
         return CaddyConfigService::trustedRanges($state) === CaddyConfigService::DEFAULT_TRUSTED_PROXIES;
+    }
+
+    /**
+     * Trusted proxy ranges wide enough to be worth a second look. Anything
+     * below a /8 is refused outright by SyncRequest; between /8 and /16 it is
+     * plausible but still lets a whole network spoof `X-Forwarded-*`.
+     *
+     * @return list<string>
+     */
+    private static function broadTrustedRanges(Node $node): array
+    {
+        $state = self::state($node);
+
+        if ($state === null || $state->mode->terminatesTls()) {
+            return [];
+        }
+
+        $broad = [];
+
+        foreach ($state->trusted_proxies ?? [] as $range) {
+            $parts = explode('/', (string) $range, 2);
+
+            if (!isset($parts[1]) || !ctype_digit($parts[1])) {
+                continue;
+            }
+
+            $ipv6 = filter_var($parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+
+            if ((int) $parts[1] < ($ipv6 ? 64 : 16)) {
+                $broad[] = (string) $range;
+            }
+        }
+
+        return $broad;
     }
 
     private static function inSync(Node $node): bool

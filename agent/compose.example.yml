@@ -14,6 +14,13 @@ services:
         # Host networking is the simplest way to get both.
         network_mode: host
 
+        # Credentials, generated on the node's Pouch tab in the panel:
+        #   POUCH_PANEL_URL, POUCH_TOKEN_ID, POUCH_TOKEN
+        # Keep them in a separate file (chmod 600) so they stay out of
+        # `docker inspect` and out of any copy of this compose file.
+        env_file:
+            - ./pouch.env
+
         environment:
             # standalone | frontend | behind
             POUCH_MODE: standalone
@@ -33,17 +40,19 @@ services:
             # Only used in "frontend" mode. Defaults to 127.0.0.1:<daemon_listen>.
             # POUCH_WINGS_UPSTREAM: 127.0.0.1:8080
 
-            # Set to "true" only if your panel uses a self-signed certificate.
-            POUCH_INSECURE: "false"
+            # Point this at a CA bundle if the panel uses a private or
+            # self-signed certificate. Certificate verification is never
+            # disabled: this channel carries the token and returns the
+            # configuration the agent applies unverified.
+            # POUCH_CA_CERT: /etc/pouch/panel-ca.crt
 
         volumes:
-            # Credentials. The agent reads panel url, token_id and token from the
-            # Wings configuration, so there is no second secret to manage.
-            - /etc/pelican/config.yml:/etc/pelican/config.yml:ro
-
             # Certificate store. Persist this or every restart re-requests
             # certificates and you will run into ACME rate limits.
             - caddy_data:/data
+
+            # Only needed with POUCH_CA_CERT.
+            # - ./panel-ca.crt:/etc/pouch/panel-ca.crt:ro
 
 volumes:
     caddy_data:

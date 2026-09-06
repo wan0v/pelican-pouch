@@ -5,6 +5,7 @@ namespace Wan0v\Pouch\Services;
 use App\Models\Node;
 use Symfony\Component\Yaml\Yaml;
 use Wan0v\Pouch\Enums\ProxyMode;
+use Wan0v\Pouch\Models\PouchNodeSetting;
 use Wan0v\Pouch\Models\PouchNodeState;
 
 /**
@@ -63,9 +64,11 @@ class AgentSnippetService
                     // node-internal addresses, and in standalone/frontend mode
                     // it also has to own ports 80 and 443 of the node.
                     'network_mode' => 'host',
+                    // The credential lives in a separate file so it stays out
+                    // of `docker inspect` and out of this snippet.
+                    'env_file' => ['./pouch.env'],
                     'environment' => $environment,
                     'volumes' => [
-                        '/etc/pelican/config.yml:/etc/pelican/config.yml:ro',
                         'caddy_data:/data',
                     ],
                 ],
@@ -76,6 +79,31 @@ class AgentSnippetService
         ];
 
         return Yaml::dump($compose, 6, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+    }
+
+    /**
+     * The `pouch.env` file that sits next to the compose file and carries the
+     * agent credential.
+     *
+     * The token is readable exactly once, right after it was issued; every
+     * other time a placeholder is rendered instead.
+     */
+    public function env(Node $node, ?string $token = null): string
+    {
+        $tokenId = PouchNodeSetting::query()->where('node_id', $node->id)->value('agent_token_id');
+        $secret = null;
+
+        if ($token !== null) {
+            [$tokenId, $secret] = array_pad(explode('.', $token, 2), 2, '');
+        }
+
+        return implode("\n", [
+            '# Pouch agent credential — chmod 600, do not commit.',
+            'POUCH_PANEL_URL=' . rtrim((string) config('app.url'), '/'),
+            'POUCH_TOKEN_ID=' . ($tokenId ?: '<generate the token in the panel>'),
+            'POUCH_TOKEN=' . ($secret ?? '<shown once, when the token is generated>'),
+            '',
+        ]);
     }
 
     /**

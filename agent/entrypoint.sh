@@ -8,6 +8,10 @@
 #
 set -eu
 
+# Everything this agent writes is either a credential-adjacent state file or a
+# private key Caddy manages, so nothing needs to be group or world readable.
+umask 077
+
 : "${POUCH_MODE:=standalone}"
 : "${POUCH_HTTP_PORT:=80}"
 : "${POUCH_HTTPS_PORT:=443}"
@@ -15,14 +19,29 @@ set -eu
 : "${POUCH_TRUSTED_PROXIES:=}"
 : "${POUCH_INTERVAL:=15}"
 : "${POUCH_WINGS_UPSTREAM:=}"
-: "${POUCH_WINGS_CONFIG:=/etc/pelican/config.yml}"
 : "${POUCH_PANEL_URL:=}"
 : "${POUCH_TOKEN_ID:=}"
 : "${POUCH_TOKEN:=}"
-: "${POUCH_ADMIN:=http://127.0.0.1:2019}"
-: "${POUCH_INSECURE:=false}"
+: "${POUCH_TOKEN_FILE:=}"
+: "${POUCH_CA_CERT:=}"
+: "${POUCH_ALLOW_HTTP:=false}"
+# Caddy's admin API listens on this socket inside the container. It is a socket
+# and not a loopback port because the agent is documented to run with
+# `network_mode: host`, where 127.0.0.1 is the *host's* loopback and every local
+# process could reconfigure Caddy.
+: "${POUCH_ADMIN_SOCKET:=/run/pouch/admin.sock}"
+# Optional TCP override, e.g. http://127.0.0.1:2019 — only for debugging.
+: "${POUCH_ADMIN:=}"
 : "${POUCH_AGENT_VERSION:=dev}"
 : "${POUCH_DATA_DIR:=/data}"
+
+if [ -n "$POUCH_ADMIN" ]; then
+    ADMIN_URL="${POUCH_ADMIN%/}"
+    ADMIN_LISTEN="$(printf '%s' "$ADMIN_URL" | sed -e 's#^https\?://##')"
+else
+    ADMIN_URL='http://localhost'
+    ADMIN_LISTEN="unix/${POUCH_ADMIN_SOCKET}"
+fi
 
 STATE_DIR="${POUCH_DATA_DIR}/pouch-agent"
 RESPONSE="${STATE_DIR}/response.json"
@@ -38,6 +57,25 @@ log() {
     printf '%s [pouch-agent] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2
 }
 
+# curl against Caddy's admin API. Wrapped so the socket flag stays a single
+# argument instead of an unquoted variable that has to word-split.
+admin_curl() {
+    if [ -n "$POUCH_ADMIN" ]; then
+        curl "$@"
+    else
+        curl --unix-socket "$POUCH_ADMIN_SOCKET" "$@"
+    fi
+}
+
+# curl against the panel, with the optional private CA.
+panel_curl() {
+    if [ -n "$POUCH_CA_CERT" ]; then
+        curl --cacert "$POUCH_CA_CERT" "$@"
+    else
+        curl "$@"
+    fi
+}
+
 fail() {
     log "FATAL: $*"
     exit 1
@@ -47,38 +85,45 @@ fail() {
 # Credentials
 # ---------------------------------------------------------------------------
 
-# Read a top-level scalar from the Wings config.yml. The panel writes that file
-# flat (uuid, token_id, token, remote), so a plain sed is sufficient and avoids
-# pulling in a YAML parser.
-wings_value() {
-    [ -r "$POUCH_WINGS_CONFIG" ] || return 0
-
-    sed -n "s/^$1:[[:space:]]*//p" "$POUCH_WINGS_CONFIG" 2>/dev/null |
-        head -n 1 |
-        sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//" -e 's/[[:space:]]*$//'
-}
-
+# The agent has its own credential, issued on the node's Pouch tab. It never
+# reads the Wings configuration: that token unlocks the node's entire remote API
+# and signs its JWTs, which is far more than this endpoint needs.
+#
+# Re-read on every cycle so a rotated token file is picked up without a restart.
 load_credentials() {
-    if [ -z "$POUCH_PANEL_URL" ]; then
-        PANEL_URL="$(wings_value remote)"
-    else
-        PANEL_URL="$POUCH_PANEL_URL"
+    PANEL_URL="${POUCH_PANEL_URL%/}"
+    TOKEN_ID="$POUCH_TOKEN_ID"
+    TOKEN="$POUCH_TOKEN"
+
+    # A token file keeps the secret out of `docker inspect` and /proc/*/environ.
+    # It holds either the full `<token_id>.<token>` or just the secret half.
+    if [ -n "$POUCH_TOKEN_FILE" ]; then
+        if [ ! -r "$POUCH_TOKEN_FILE" ]; then
+            LAST_ERROR="token file ${POUCH_TOKEN_FILE} is not readable"
+
+            return 1
+        fi
+
+        credential="$(tr -d '\r\n[:space:]' <"$POUCH_TOKEN_FILE")"
+
+        case "$credential" in
+        *.*)
+            TOKEN_ID="${credential%%.*}"
+            TOKEN="${credential#*.}"
+            ;;
+        *)
+            TOKEN="$credential"
+            ;;
+        esac
     fi
 
-    if [ -z "$POUCH_TOKEN_ID" ]; then
-        TOKEN_ID="$(wings_value token_id)"
-    else
-        TOKEN_ID="$POUCH_TOKEN_ID"
+    if [ -z "$PANEL_URL" ] || [ -z "$TOKEN_ID" ] || [ -z "$TOKEN" ]; then
+        LAST_ERROR='missing credentials; set POUCH_PANEL_URL, POUCH_TOKEN_ID and POUCH_TOKEN (or POUCH_TOKEN_FILE)'
+
+        return 1
     fi
 
-    if [ -z "$POUCH_TOKEN" ]; then
-        TOKEN="$(wings_value token)"
-    else
-        TOKEN="$POUCH_TOKEN"
-    fi
-
-    # Strip a trailing slash so the URL join below stays predictable.
-    PANEL_URL="${PANEL_URL%/}"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -87,6 +132,7 @@ load_credentials() {
 
 start_caddy() {
     mkdir -p "$STATE_DIR"
+    mkdir -p "$(dirname "$POUCH_ADMIN_SOCKET")"
 
     # A freshly started Caddy always begins with the empty bootstrap config, so
     # whatever we applied to a previous process is meaningless. Forgetting it
@@ -95,7 +141,7 @@ start_caddy() {
     rm -f "$APPLIED_HASH_FILE"
 
     # Boot with an empty configuration. Everything else arrives from the panel.
-    printf '{"admin":{"listen":"127.0.0.1:2019"}}\n' >"$BOOTSTRAP"
+    printf '{"admin":{"listen":"%s"}}\n' "$ADMIN_LISTEN" >"$BOOTSTRAP"
 
     caddy run --config "$BOOTSTRAP" &
     CADDY_PID=$!
@@ -103,7 +149,7 @@ start_caddy() {
     # Wait for the admin API to answer before the first sync.
     i=0
     while [ "$i" -lt 30 ]; do
-        if curl -fsS "${POUCH_ADMIN}/config/" >/dev/null 2>&1; then
+        if admin_curl -fsS "${ADMIN_URL}/config/" >/dev/null 2>&1; then
             log "caddy admin api ready (pid ${CADDY_PID})"
             return 0
         fi
@@ -141,7 +187,7 @@ cert_status_json() {
 }
 
 apply_config() {
-    if curl -fsS -X POST "${POUCH_ADMIN}/load" \
+    if admin_curl -fsS -X POST "${ADMIN_URL}/load" \
         -H 'Content-Type: application/json' \
         --data-binary "@${DESIRED}" >/dev/null 2>"${STATE_DIR}/load.err"; then
         return 0
@@ -197,22 +243,16 @@ build_payload() {
 }
 
 sync_once() {
-    load_credentials
-
-    if [ -z "$PANEL_URL" ] || [ -z "$TOKEN_ID" ] || [ -z "$TOKEN" ]; then
-        LAST_ERROR="missing credentials; mount ${POUCH_WINGS_CONFIG} read-only or set POUCH_PANEL_URL/POUCH_TOKEN_ID/POUCH_TOKEN"
+    if ! load_credentials; then
         log "$LAST_ERROR"
+
         return 1
     fi
 
     build_payload
 
-    insecure=''
-    [ "$POUCH_INSECURE" = 'true' ] && insecure='--insecure'
-
     status="$(
-        curl -sS -o "$RESPONSE" -w '%{http_code}' \
-            ${insecure:+$insecure} \
+        panel_curl -sS -o "$RESPONSE" -w '%{http_code}' \
             -X POST "${PANEL_URL}/api/remote/pouch/sync" \
             -H "Authorization: Bearer ${TOKEN_ID}.${TOKEN}" \
             -H 'Accept: application/json' \
@@ -292,6 +332,25 @@ fi
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 command -v curl >/dev/null 2>&1 || fail 'curl is required'
+
+[ -n "$POUCH_PANEL_URL" ] || fail 'POUCH_PANEL_URL is required'
+
+# The panel URL carries the credential and returns a configuration that is
+# applied verbatim, so an unverified channel gives away both.
+case "${POUCH_PANEL_URL}" in
+https://*) ;;
+http://*)
+    [ "$POUCH_ALLOW_HTTP" = 'true' ] ||
+        fail 'refusing to send the agent token over plain HTTP; use https, or set POUCH_ALLOW_HTTP=true for local development'
+    log 'WARNING: talking to the panel over plain HTTP - credential and configuration are unprotected'
+    ;;
+*) fail "POUCH_PANEL_URL must start with https:// (got '${POUCH_PANEL_URL}')" ;;
+esac
+
+if [ -n "$POUCH_CA_CERT" ]; then
+    [ -r "$POUCH_CA_CERT" ] || fail "POUCH_CA_CERT ${POUCH_CA_CERT} is not readable"
+    log "verifying the panel certificate against ${POUCH_CA_CERT}"
+fi
 
 mkdir -p "$STATE_DIR"
 

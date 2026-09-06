@@ -42,6 +42,7 @@ return [
         'backend_tls_insecure' => 'Selbstsignierte oder anderweitig ungültige Backend-Zertifikate akzeptieren.',
         'websockets' => 'WebSocket-Verbindungen werden automatisch durchgereicht.',
         'listen' => 'Wird vom Agenten über POUCH_BIND und POUCH_HTTP_PORT gemeldet. Der Frontend-Proxy muss genau an diese Adresse weiterleiten.',
+        'agent_token' => 'Der öffentliche Teil der Zugangsdaten. Er identifiziert den Agenten; der geheime Teil wird nur einmal angezeigt, direkt nach dem Erzeugen.',
     ],
 
     'actions' => [
@@ -52,6 +53,8 @@ return [
         'set_proxy_domain' => 'Proxy-Domain festlegen',
         'change_proxy_domain' => 'Proxy-Domain ändern',
         'clear_proxy_domain' => 'Proxy-Domain entfernen',
+        'generate_agent_token' => 'Agent-Token erzeugen',
+        'regenerate_agent_token' => 'Neuen Agent-Token erzeugen',
     ],
 
     'node' => [
@@ -76,8 +79,18 @@ return [
         'dns_ok' => 'Wildcard-DNS zeigt auf :ip',
         'dns_missing' => 'Wildcard-DNS löst noch nicht auf.',
         'dns_mismatch' => 'Wildcard-DNS zeigt auf :resolved, die Node ist aber :expected.',
+        'credential' => 'Agent-Zugangsdaten',
+        'credential_hint' => 'Der Agent authentifiziert sich mit einem eigenen Token, das ausschließlich diesen Sync-Endpoint freischaltet. Der Wings-Token bleibt auf der Node und wird dem Agent-Container nie übergeben.',
+        'agent_token_id' => 'Agent-Token-ID',
+        'agent_token_missing' => 'Noch kein Agent-Token — bitte einen erzeugen, ohne ihn kann der Agent nicht synchronisieren.',
+        'agent_token_created' => 'Agent-Token erzeugt',
+        'agent_token_once' => 'Diesen Inhalt in die pouch.env neben der Compose-Datei auf der Node kopieren und mit chmod 600 schützen. Das Panel speichert das Secret verschlüsselt und zeigt es nicht erneut an — bei Verlust einen neuen Token erzeugen.',
+        'agent_token_generate_hint' => 'Erzeugt Zugangsdaten, die nur für den Sync-Endpoint dieser Node gelten. Der Agent braucht sie zwingend — die entstehende pouch.env muss also auf die Node ausgerollt werden.',
+        'agent_token_regenerate_warning' => 'Der aktuell laufende Agent dieser Node synchronisiert nicht mehr, bis die neuen Zugangsdaten dort ausgerollt sind.',
+        'broad_proxies_warning' => 'Der Agent vertraut :ranges für X-Forwarded-*-Header. Jeder Client in diesen Netzen kann den Backends dieser Node eine beliebige Absenderadresse vorgeben. POUCH_TRUSTED_PROXIES bitte auf den Frontend-Proxy eingrenzen.',
+        'agent_token_required_warning' => 'Diese Node hat keinen Agent-Token, ihr Agent kann daher nicht synchronisieren. Bitte unten einen erzeugen, die entstehende pouch.env auf die Node legen und den Mount von /etc/pelican/config.yml aus dem Agent-Container entfernen — der Wings-Token wird nicht mehr akzeptiert.',
         'install' => 'Agent-Installation',
-        'install_hint' => 'Diese Compose-Datei auf der Node ausführen. Sie liest die Wings-Zugangsdaten aus /etc/pelican/config.yml, es werden also keine zusätzlichen Secrets benötigt.',
+        'install_hint' => 'Diese Compose-Datei zusammen mit der pouch.env aus dem Abschnitt darüber auf der Node ausführen.',
         'install_docs' => 'Dokumentation des Agenten',
         'frontend_snippet' => 'Konfiguration des Frontend-Proxys',
         'frontend_snippet_hint' => 'Dieses Snippet im vorhandenen Frontend-Proxy ergänzen, damit die Wildcard an den Agenten weitergereicht wird.',

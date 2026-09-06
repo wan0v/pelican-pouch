@@ -9,5 +9,5 @@ parameters:
 		-
 			message: '#^Usage of global function "app" is forbidden\.$#'
 			identifier: myCustomRules.forbiddenGlobalFunctions
-			count: 8
+			count: 10
 			path: src/Filament/Admin/Schemas/PouchNodeTab.php
