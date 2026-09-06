@@ -79,7 +79,7 @@ adjust `POUCH_HTTP_PORT` accordingly.
 
 `POUCH_BIND` defaults to `127.0.0.1`, which is what you want when the front-end
 proxy runs on the same machine. If it runs on a different host in a private
-network, bind the interface it reaches instead and tell the agent which sources
+network (e.g. Wireguard-Tunnel), bind the interface it reaches instead and tell the agent which sources
 may set `X-Forwarded-*` headers:
 
 ```yaml

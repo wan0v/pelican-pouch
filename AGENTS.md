@@ -1,8 +1,71 @@
 # AGENTS.md — pouch plugin
 
 A Pelican Panel plugin (`Wan0v\Pouch`) that publishes server allocations as HTTPS
-vhosts via a Caddy instance running on the node. Read `README.md` for the feature story and
-`agent/README.md` for the node-side agent.
+vhosts via a Caddy instance running on the node.
+
+## Orientation
+
+An admin picks a server allocation (`10.10.10.2:5555`) and a label (`chat-a1b2c3`). The
+plugin turns that into `https://chat-a1b2c3.<node fqdn>`, served by a Caddy instance the
+plugin owns on the node. Wings has no API for managing a web server, so the panel cannot
+push proxy config through it — hence a separate **agent** container next to Wings that
+polls the panel and applies what it gets.
+
+The whole system is one loop:
+
+```text
+env vars on the node
+  → POST /api/remote/pouch/sync   (SyncController, Wings token auth)
+  → pouch_node_states             (what the node reports about itself)
+  → CaddyConfigService            (the panel decides everything)
+  → { hash, caddy json }
+  → agent loads it into Caddy     (only when the hash moved)
+```
+
+The panel is the brain, the agent is deliberately dumb. Anything the panel cannot know —
+mode, ports, bind address, trusted proxies, wings upstream — is *reported by the agent*
+and never authored in the panel.
+
+### Where things live
+
+| Path | Role |
+| --- | --- |
+| `src/Services/HostnameService.php` | base domain, labels, wildcard DNS check |
+| `src/Services/CaddyConfigService.php` | builds the entire Caddy JSON + its hash |
+| `src/Services/AgentSnippetService.php` | the `compose.yml` and front-end proxy snippets shown in the UI |
+| `src/Http/Controllers/Remote/SyncController.php`, `routes/api-remote.php` | the single agent endpoint |
+| `src/Filament/Admin/Schemas/PouchNodeTab.php` | the node's "Pouch" tab (agent status, proxy domain, snippets) |
+| `src/Filament/Admin/RelationManagers/PouchRoutesRelationManager.php` | "Pouch Routes" below a server's allocations |
+| `src/Observers/AllocationObserver.php`, `PouchRoute::pruneStaleForNode()` | cleanup of released allocations |
+| `src/Providers/PouchPluginProvider.php` | every core extension point, in one file |
+| `src/Console/Commands/PreviewCaddyConfigCommand.php` | `p:pouch:preview`, the only way to verify config generation |
+| `agent/` | the container image — **not** part of the plugin zip |
+
+### Data model
+
+Three tables, all created in `database/migrations`:
+
+- **`pouch_routes`** — one row per published allocation: `label` plus the backend
+  settings (`backend_scheme`, `backend_tls_insecure`, `enabled`). `hostname` and `url`
+  are computed accessors, never columns.
+- **`pouch_node_states`** — what the agent last reported: `mode`, `http_port`,
+  `https_port`, `bind_address`, `trusted_proxies`, `wings_upstream`, `agent_version`,
+  `caddy_version`, `last_seen_at`, `applied_hash`, `last_error` and `cert_status`.
+  Every field must stay nullable — older agents do not send newer ones.
+- **`pouch_node_settings`** — only `proxy_domain`, only meaningful for nodes with an IP FQDN.
+
+### Docs ownership
+
+Three documents, three audiences. Keep them apart:
+
+- **`README.md`** is operator documentation. Task-ordered, plain language, no class names,
+  no table or column names, no artisan commands beyond what an operator would run.
+  The architecture section at the end is the *why*, not the *how*.
+- **`agent/README.md`** is the node-side install and environment-variable reference.
+- **`AGENTS.md`** (this file) holds internals, invariants and contributor workflow.
+
+New internals belong here, not in the README. If you find yourself writing a class name
+into `README.md`, it goes in this file instead.
 
 ## Where commands run
 
@@ -11,17 +74,38 @@ has its own git repository (`wan0v/pelican-pouch`) but no `composer.json`: it re
 `App\*` and larastan from the panel it is installed into, so it can only be linted and
 analysed inside a panel checkout at `plugins/pouch`.
 
+**The directory name must equal the plugin id.** `App\Models\Plugin` discovers plugins by
+iterating `plugins/`, takes the folder basename as the key and throws
+`PluginIdMismatchException` when it does not match `plugin.json.id`; `plugin_path()` and
+every PSR-4 / config / lang / migration lookup goes through `plugins/<id>/`. The GitHub
+repo is called `pelican-pouch`, so a bare clone produces exactly the wrong name — the
+plugin then shows up in the admin list as a broken entry, and throws under
+`PANEL_PLUGIN_DEV_MODE`. Clone it explicitly:
+
+```bash
+git clone https://github.com/wan0v/pelican-pouch.git plugins/pouch
+```
+
 ```bash
 # from the panel root
 vendor/bin/pint plugins/pouch --test             # --test to check only; passes today
 vendor/bin/phpstan analyse -c plugins/pouch/phpstan.neon --memory-limit=-1
-php artisan p:pouch:preview <node id|name> [--mode=standalone|frontend|behind] [--bind=10.0.0.2]
 php artisan p:plugin:list                        # confirm the plugin is enabled/loaded
 php artisan migrate                              # picks up database/migrations automatically
+
+# the config preview — see "Testing reality" for why this matters so much
+php artisan p:pouch:preview [node]               # id, name or fqdn; omit for an interactive picker
+    [--mode=standalone|frontend|behind]
+    [--http-port=8080] [--https-port=443]
+    [--bind=10.0.0.2] [--trusted-proxies=10.0.0.0/24]
 
 # from this directory
 php scripts/build-zip.php [version]              # writes dist/pouch-<version>.zip
 ```
+
+All `--` options only mutate an unsaved `PouchNodeState`; nothing is persisted. The output
+is a header block (`# node:`, `# base:`, `# mode:`, `# listen:`, `# hash:`) followed by the
+pretty-printed Caddy JSON.
 
 - The panel's own `phpstan.neon` has `paths: [app]`, so it never sees plugin code. This
   plugin ships its own `phpstan.neon` (level 6, same `ForbiddenGlobalFunctionsRule`) plus a
@@ -162,3 +246,20 @@ by design — pick a node with a real domain when previewing.
   proxy as the client.
 - `agent/entrypoint.sh` is POSIX `sh` under `set -eu` on `caddy:2-alpine` with only
   `curl` + `jq` available — no bash-isms, no extra tooling.
+- `AgentSnippetService::compose()` only *echoes back* `POUCH_BIND` / `POUCH_TRUSTED_PROXIES`
+  once the agent has reported them, and only in `behind` mode. The panel never authors
+  node-local values — the generated snippet is a convenience, not a source of truth. It
+  also carries no secrets, since the agent reads them from the mounted Wings config.
+
+## UI strings
+
+- Everything user-visible goes through `trans('pouch::strings....')`, with one exception:
+  the "Caddy JSON" section heading in `PouchNodeTab` is a hardcoded English literal. Either
+  translate it or leave it — do not add more.
+- Dead keys exist today and should not grow: `actions.edit`, `actions.delete` and
+  `actions.regenerate_label` are defined but the relation manager uses Filament's default
+  `EditAction` / `DeleteAction` labels, and `node.dns_mismatch` is unused because
+  `HostnameService::resolveWildcard()` only checks *that* the wildcard resolves, never
+  against the node's IP. Wire them up or drop them; do not add new orphans.
+- The operator-facing wording in `README.md` quotes these strings. When you rename a label,
+  an action or a status badge, grep `README.md` for the old wording.
