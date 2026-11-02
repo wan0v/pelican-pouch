@@ -14,13 +14,13 @@ jobs:
         name: Lint, static analysis & tests (PHP ${{ matrix.php }})
         runs-on: ubuntu-latest
 
-        # The panel supports ^8.3 || ^8.4 || ^8.5 and PHPStan derives its target
+        # The panel supports ^8.4 || ^8.5 and PHPStan derives its target
         # version from the running runtime, so a single leg would hide
         # version-specific findings in either direction.
         strategy:
             fail-fast: false
             matrix:
-                php: ['8.3', '8.4', '8.5']
+                php: ['8.4', '8.5']
 
         steps:
             # The plugin cannot be analysed standalone: it has no composer.json
@@ -45,8 +45,8 @@ jobs:
                   extensions: bcmath, gd, intl, mbstring, pdo_sqlite, sqlite3, zip
                   coverage: none
 
-            # The panel pins config.platform.php to 8.3, so vendor resolves
-            # identically on every leg. The prefix only keeps the three parallel
+            # The panel pins config.platform.php to 8.4, so vendor resolves
+            # identically on every leg. The prefix only keeps the parallel
             # jobs from racing to write the same cache key.
             - name: Cache composer dependencies
               uses: actions/cache@v4
