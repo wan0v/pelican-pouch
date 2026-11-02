@@ -127,7 +127,9 @@ The version lives in exactly one place: the git tag. Pushing `v1.2.3` triggers
 1. builds and pushes `ghcr.io/wan0v/pouch-agent:1.2.3` and `:latest` from `agent/`,
    for `linux/amd64` and `linux/arm64`,
 2. runs `scripts/build-zip.php 1.2.3` and attaches `pouch-1.2.3.zip` to the release,
-3. rewrites `update.json` on `main`, which `plugin.json.update_url` points at.
+3. rewrites `update.json` on `main`, which `plugin.json.update_url` points at, including
+   the zip's `sha256` from step 2. The panel rejects an update whose download does not
+   match it, so never edit `version` / `download_url` by hand without recomputing the hash.
 
 A tag whose version contains a hyphen (`v1.2.3-rc1`) is treated as a prerelease: the image
 is pushed under its own tag but **`:latest` does not move**, the GitHub release is flagged
@@ -144,6 +146,10 @@ excludes `agent/`, `AGENTS.md`, `plugin-development.md`, `scripts/`, `.github/`,
 `phpstan*.neon` and `update.json`. **`agent/` is deliberately not in the zip** — the agent
 ships as a container image, so the panel links `PouchPlugin::AGENT_DOCS_URL` instead of a
 local path. If you move that documentation, update the constant.
+
+`plugin.json.panel_version` is `^1.0.0-beta38`, not `^1.0.0`: PHP's `version_compare` sorts
+prereleases below the release, so `^1.0.0` would mark the plugin incompatible on every
+`1.0.0-rc.*` panel. Raise the floor only when the plugin starts using a newer core API.
 
 ## Testing reality
 

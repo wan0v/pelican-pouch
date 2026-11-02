@@ -10,7 +10,8 @@
     "namespace": "Wan0v\\Pouch",
     "class": "PouchPlugin",
     "panels": null,
-    "panel_version": null,
+    "panel_version": "^1.0.0-beta38",
+    "api_version": 1,
     "composer_packages": null,
     "meta": {
         "status": "enabled",

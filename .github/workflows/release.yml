@@ -65,6 +65,8 @@ jobs:
     plugin:
         name: Plugin zip
         runs-on: ubuntu-latest
+        outputs:
+            sha256: ${{ steps.checksum.outputs.sha256 }}
         steps:
             - uses: actions/checkout@v7
 
@@ -83,6 +85,12 @@ jobs:
             # plugin.json, in the zip name and in the agent image tag.
             - name: Build zip
               run: php scripts/build-zip.php "${{ steps.version.outputs.value }}"
+
+            # The panel verifies a downloaded update against the sha256 that
+            # update.json advertises, so hash exactly the file that gets uploaded.
+            - name: Checksum
+              id: checksum
+              run: echo "sha256=$(sha256sum "dist/pouch-${{ steps.version.outputs.value }}.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
             - name: Create release
               uses: softprops/action-gh-release@v2
@@ -108,21 +116,29 @@ jobs:
               run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
             # plugin.json points update_url at this file. The panel reads
-            # { "*": { version, download_url } } - see Plugin::getUpdateData().
+            # { "*": { version, download_url, sha256 } } - see Plugin::getUpdateData()
+            # and PluginService::downloadPluginFromUrl(), which rejects a download
+            # whose hash does not match.
             - name: Write update.json
               env:
                   VERSION: ${{ steps.version.outputs.value }}
                   REPO: ${{ github.repository }}
                   SERVER: ${{ github.server_url }}
+                  SHA256: ${{ needs.plugin.outputs.sha256 }}
               run: |
                   php -r '
                       $version = getenv("VERSION");
+                      $sha256 = getenv("SHA256");
+                      if (!preg_match("/^[0-9a-f]{64}$/", $sha256)) {
+                          fwrite(STDERR, "missing or malformed sha256\n");
+                          exit(1);
+                      }
                       $url = sprintf(
                           "%s/%s/releases/download/v%s/pouch-%s.zip",
                           getenv("SERVER"), getenv("REPO"), $version, $version,
                       );
                       file_put_contents("update.json", json_encode(
-                          ["*" => ["version" => $version, "download_url" => $url]],
+                          ["*" => ["version" => $version, "download_url" => $url, "sha256" => $sha256]],
                           JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
                       ) . "\n");
                   '

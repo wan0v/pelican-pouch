@@ -1,6 +1,7 @@
 {
     "*": {
         "version": "1.2.1",
-        "download_url": "https://github.com/wan0v/pelican-pouch/releases/download/v1.2.1/pouch-1.2.1.zip"
+        "download_url": "https://github.com/wan0v/pelican-pouch/releases/download/v1.2.1/pouch-1.2.1.zip",
+        "sha256": "e8dcb40c0c3295c4389c1de923ab49d19dd6b225cfc54ac87f9e3218e6c2c889"
     }
 }
